@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Direct Upload to Supabase</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 30px;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 600;
+            color: #555;
+        }
+        input, select {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+        button {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 5px;
+            font-size: 16px;
+            cursor: pointer;
+            width: 100%;
+            margin-top: 10px;
+        }
+        button:hover {
+            background: #2563eb;
+        }
+        button:disabled {
+            background: #94a3b8;
+            cursor: not-allowed;
+        }
+        .status {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 5px;
+            display: none;
+        }
+        .status.info {
+            background: #dbeafe;
+            color: #1e40af;
+            display: block;
+        }
+        .status.success {
+            background: #dcfce7;
+            color: #166534;
+            display: block;
+        }
+        .status.error {
+            background: #fee2e2;
+            color: #991b1b;
+            display: block;
+        }
+        .file-info {
+            background: #f8fafc;
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 10px;
+            font-size: 14px;
+        }
+        .progress {
+            width: 100%;
+            height: 20px;
+            background: #e5e7eb;
+            border-radius: 10px;
+            overflow: hidden;
+            margin-top: 10px;
+        }
+        .progress-bar {
+            height: 100%;
+            background: #3b82f6;
+            width: 0%;
+            transition: width 0.3s;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎤 Test Audio Upload</h1>
+        <p style="color: #666; margin-bottom: 30px;">
+            This page tests direct upload to Supabase Storage, bypassing Vercel's 4.5MB limit.
+        </p>
+
+        <form id="uploadForm">
+            <div class="form-group">
+                <label for="audioFile">Audio File (up to 100MB)</label>
+                <input type="file" id="audioFile" accept="audio/*" required>
+                <div id="fileInfo" class="file-info" style="display: none;"></div>
+            </div>
+
+            <div class="form-group">
+                <label for="doctorName">Doctor Name</label>
+                <input type="text" id="doctorName" value="Dr. Test" required>
+            </div>
+
+            <div class="form-group">
+                <label for="patientName">Patient Name</label>
+                <input type="text" id="patientName" value="Test Patient" required>
+            </div>
+
+            <div class="form-group">
+                <label for="documentType">Document Type</label>
+                <select id="documentType" required>
+                    <option value="consultation">Consultation</option>
+                    <option value="follow-up">Follow-up</option>
+                    <option value="initial-assessment">Initial Assessment</option>
+                    <option value="discharge-summary">Discharge Summary</option>
+                </select>
+            </div>
+
+            <button type="submit" id="submitBtn">Upload & Transcribe</button>
+        </form>
+
+        <div id="status" class="status"></div>
+        <div class="progress" id="progress" style="display: none;">
+            <div class="progress-bar" id="progressBar"></div>
+        </div>
+    </div>
+
+    <script>
+        const form = document.getElementById('uploadForm');
+        const fileInput = document.getElementById('audioFile');
+        const fileInfo = document.getElementById('fileInfo');
+        const status = document.getElementById('status');
+        const submitBtn = document.getElementById('submitBtn');
+        const progress = document.getElementById('progress');
+        const progressBar = document.getElementById('progressBar');
+
+        // Your deployed app URL
+        const APP_URL = 'https://dashboard-next-gs7sz7fhz-omar-salems-projects-e9d8c3df.vercel.app';
+
+        fileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                const sizeMB = (file.size / 1024 / 1024).toFixed(2);
+                fileInfo.innerHTML = `
+                    <strong>Selected:</strong> ${file.name}<br>
+                    <strong>Size:</strong> ${sizeMB} MB<br>
+                    <strong>Type:</strong> ${file.type || 'Unknown'}
+                `;
+                fileInfo.style.display = 'block';
+
+                // Warn if file is large
+                if (file.size > 4.5 * 1024 * 1024) {
+                    fileInfo.innerHTML += `<br><strong style="color: #059669;">✓ This file would fail with old upload method (>4.5MB)</strong>`;
+                }
+            }
+        });
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const file = fileInput.files[0];
+            if (!file) {
+                showStatus('Please select a file', 'error');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('audio', file);
+            formData.append('doctorName', document.getElementById('doctorName').value);
+            formData.append('patientName', document.getElementById('patientName').value);
+            formData.append('documentType', document.getElementById('documentType').value);
+
+            submitBtn.disabled = true;
+            progress.style.display = 'block';
+            showStatus('Uploading file...', 'info');
+
+            try {
+                // Simulate progress (since FormData doesn't give us real progress)
+                let progressValue = 0;
+                const progressInterval = setInterval(() => {
+                    progressValue += 10;
+                    if (progressValue <= 90) {
+                        progressBar.style.width = progressValue + '%';
+                    }
+                }, 500);
+
+                const response = await fetch(`${APP_URL}/api/transcribe-optimized`, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                clearInterval(progressInterval);
+                progressBar.style.width = '100%';
+
+                const data = await response.json();
+
+                if (response.ok && data.success) {
+                    showStatus(`
+                        <strong>✅ Success!</strong><br>
+                        Transcription ID: ${data.transcriptionId}<br>
+                        Status: ${data.status}<br>
+                        Message: ${data.message}
+                    `, 'success');
+                } else {
+                    throw new Error(data.error || 'Upload failed');
+                }
+            } catch (error) {
+                console.error('Upload error:', error);
+                showStatus(`
+                    <strong>❌ Error:</strong><br>
+                    ${error.message}<br><br>
+                    <small>Check the browser console for more details</small>
+                `, 'error');
+            } finally {
+                submitBtn.disabled = false;
+                setTimeout(() => {
+                    progress.style.display = 'none';
+                    progressBar.style.width = '0%';
+                }, 1000);
+            }
+        });
+
+        function showStatus(message, type) {
+            status.innerHTML = message;
+            status.className = `status ${type}`;
+        }
+
+        // Check if the API is accessible
+        fetch(`${APP_URL}/api/transcribe-optimized`)
+            .then(r => {
+                if (r.status === 405) {
+                    console.log('✅ API endpoint is accessible');
+                } else {
+                    console.warn('API endpoint returned status:', r.status);
+                }
+            })
+            .catch(e => {
+                console.error('Cannot reach API endpoint:', e);
+                showStatus('⚠️ Warning: Cannot reach the API endpoint. Check CORS settings.', 'error');
+            });
+    </script>
+</body>
+</html>

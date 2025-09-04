@@ -1,0 +1,101 @@
+{
+  "name": "Medical Transcription - Minimal Callback",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "medical-transcribe",
+        "responseMode": "onReceived",
+        "responseData": "allEntries",
+        "options": {}
+      },
+      "id": "webhook",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "webhookId": "medical-transcribe",
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ message: 'Transcription request received', id: $json.id, status: 'processing' }) }}",
+        "options": {}
+      },
+      "id": "respond",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            { "name": "id", "value": "={{ $json.id }}" },
+            { "name": "fileName", "value": "={{ $json.fileName }}" },
+            { "name": "doctorName", "value": "={{ $json.doctorName }}" },
+            { "name": "patientName", "value": "={{ $json.patientName }}" },
+            { "name": "documentType", "value": "={{ $json.documentType }}" },
+            { "name": "audioUrl", "value": "={{ $json.audioUrl || '' }}" },
+            { "name": "callbackUrl", "value": "={{ $json.callbackUrl }}" },
+            { "name": "transcription", "value": "Your file has been queued for transcription." },
+            { "name": "formattedText", "value": "" },
+            { "name": "status", "value": "processing" }
+          ],
+          "boolean": [ { "name": "isFormatted", "value": false } ]
+        },
+        "options": {}
+      },
+      "id": "prepare",
+      "name": "Prepare Callback Payload",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.callbackUrl }}",
+        "method": "POST",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ uploadId: $json.id, success: true, transcription: $json.transcription, formattedText: $json.formattedText, documentType: $json.documentType, doctorName: $json.doctorName, patientName: $json.patientName, fileName: $json.fileName, audioUrl: $json.audioUrl, isFormatted: $json.isFormatted, processedAt: new Date().toISOString() }) }}",
+        "options": { "retry": { "retryOnFail": true, "maxRetries": 3, "retryInterval": 3000 } }
+      },
+      "id": "callback",
+      "name": "Notify Website",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [850, 300],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "values": {
+          "boolean": [ { "name": "success", "value": true } ],
+          "string": [
+            { "name": "message", "value": "Workflow accepted for processing" },
+            { "name": "uploadId", "value": "={{ $json.id }}" },
+            { "name": "status", "value": "processing" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "response",
+      "name": "Format Response",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [1050, 300]
+    }
+  ],
+  "connections": {
+    "Webhook": { "main": [ [ { "node": "Respond to Webhook", "type": "main", "index": 0 }, { "node": "Prepare Callback Payload", "type": "main", "index": 0 } ] ] },
+    "Prepare Callback Payload": { "main": [ [ { "node": "Notify Website", "type": "main", "index": 0 } ] ] },
+    "Notify Website": { "main": [ [ { "node": "Format Response", "type": "main", "index": 0 } ] ] }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "versionId": "medical-minimal-v1"
+}
+
+

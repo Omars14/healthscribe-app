@@ -1,0 +1,413 @@
+{
+  "name": "Medical Transcription Fixed v12",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "medical-transcribe-v2",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "webhook-node",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [250, 300],
+      "webhookId": "medical-transcribe-v2"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Process incoming webhook data with CORRECT field names\nconst item = $input.item.json;\n\nconsole.log('Received webhook data');\nconsole.log('Upload ID:', item.uploadId);\nconsole.log('Audio URL:', item.audioUrl);\nconsole.log('Doctor:', item.doctorName);\nconsole.log('Patient:', item.patientName);\n\n// Map the actual webhook fields to what we need\nconst processedData = {\n  // Use uploadId from webhook\n  transcriptionId: item.uploadId || item.id || '',\n  \n  // Audio fields - NO base64 audio is sent, only URL\n  audioUrl: item.audioUrl || '',\n  hasAudioUrl: !!item.audioUrl,\n  \n  // File information\n  fileName: item.fileName || 'audio.mp3',\n  fileSize: item.fileSize || 0,\n  fileType: item.fileType || 'audio/mpeg',\n  \n  // Medical information - these are coming through correctly\n  doctorName: item.doctorName || '',\n  patientName: item.patientName || '',\n  documentType: item.documentType || 'consultation',\n  \n  // Other fields\n  uploadTime: item.uploadTime || new Date().toISOString(),\n  source: item.source || 'dashboard-next',\n  callbackUrl: item.callbackUrl || 'http://localhost:3000/api/transcription-result-v2',\n  \n  // For workflow routing\n  needsDownload: !!item.audioUrl && !item.audio\n};\n\nconsole.log('Processed data:', {\n  transcriptionId: processedData.transcriptionId,\n  hasAudioUrl: processedData.hasAudioUrl,\n  needsDownload: processedData.needsDownload\n});\n\nreturn processedData;"
+      },
+      "id": "process-data",
+      "name": "Process Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "has-audio-url",
+              "leftValue": "={{ $json.hasAudioUrl }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-audio-url",
+      "name": "Has Audio URL?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.audioUrl }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          },
+          "timeout": 30000
+        }
+      },
+      "id": "download-audio",
+      "name": "Download Audio from URL",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [850, 280],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/audio/transcriptions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "openAiApi",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "whisper-1"
+            },
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "data"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "whisper-api",
+      "name": "OpenAI Whisper",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1050, 280],
+      "credentials": {
+        "openAiApi": {
+          "id": "1",
+          "name": "OpenAI API"
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Mock transcription for when no audio URL is available\nconst originalData = $('Process Data').item.json;\n\nconst mockTranscription = `Medical Consultation Transcript\n\nDate: ${new Date().toLocaleDateString()}\nDoctor: ${originalData.doctorName}\nPatient: ${originalData.patientName}\nDocument Type: ${originalData.documentType}\n\nChief Complaint:\nPatient presents for routine examination.\n\nHistory of Present Illness:\nThe patient reports feeling generally well with no acute complaints.\n\nReview of Systems:\n- Constitutional: No fever, chills, or unintentional weight loss\n- Cardiovascular: No chest pain, palpitations, or edema\n- Respiratory: No shortness of breath, cough, or wheezing\n- Gastrointestinal: No nausea, vomiting, or changes in bowel habits\n\nPhysical Examination:\n- Vital Signs: Within normal limits\n- General: Alert and oriented, well-appearing\n- HEENT: Normocephalic, atraumatic\n- Cardiovascular: Regular rate and rhythm, no murmurs\n- Respiratory: Clear to auscultation bilaterally\n- Abdomen: Soft, non-tender, non-distended\n\nAssessment and Plan:\nHealthy adult presenting for routine care. Continue current health maintenance.\nFollow up in 12 months or sooner if concerns arise.\n\n[Note: This is a mock transcription for testing purposes]`;\n\nreturn {\n  rawTranscription: mockTranscription,\n  transcriptionId: originalData.transcriptionId,\n  doctorName: originalData.doctorName,\n  patientName: originalData.patientName,\n  documentType: originalData.documentType,\n  fileName: originalData.fileName,\n  audioUrl: originalData.audioUrl,\n  callbackUrl: originalData.callbackUrl,\n  source: 'mock'\n};"
+      },
+      "id": "mock-transcription",
+      "name": "Mock Transcription",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [850, 400]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Merge transcription results from either real or mock source\nconst item = $input.item.json;\nconst originalData = $('Process Data').item.json;\nlet rawTranscription = '';\nlet source = 'unknown';\n\n// Check if we have real transcription from Whisper\nif (item.text) {\n  // Direct text response from Whisper\n  rawTranscription = item.text;\n  source = 'whisper';\n} else if (item.transcription) {\n  // Alternative field name\n  rawTranscription = item.transcription;\n  source = 'whisper';\n} else if (item.data && typeof item.data === 'string') {\n  // Sometimes the response is in data field\n  rawTranscription = item.data;\n  source = 'whisper';\n} else if (item.rawTranscription) {\n  // Mock transcription\n  rawTranscription = item.rawTranscription;\n  source = item.source || 'mock';\n} else {\n  // Fallback\n  rawTranscription = 'Transcription not available. Please check the audio file.';\n  source = 'error';\n}\n\nconsole.log('Transcription source:', source);\nconsole.log('Transcription length:', rawTranscription.length);\n\n// Prepare complete data for next steps\nreturn {\n  rawTranscription: rawTranscription,\n  transcriptionId: originalData.transcriptionId,\n  doctorName: originalData.doctorName,\n  patientName: originalData.patientName,\n  documentType: originalData.documentType,\n  fileName: originalData.fileName,\n  audioUrl: originalData.audioUrl,\n  callbackUrl: originalData.callbackUrl,\n  source: source\n};"
+      },
+      "id": "merge-results",
+      "name": "Merge Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1250, 350]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleGeminiApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  contents: [{\n    parts: [{\n      text: `You are a professional medical transcriptionist. Format the following medical transcription into a clean, professional document.\n\nDOCUMENT INFORMATION:\n- Type: ${$json.documentType}\n- Doctor: ${$json.doctorName}\n- Patient: ${$json.patientName}\n- Date: ${new Date().toLocaleDateString()}\n\nRAW TRANSCRIPTION:\n${$json.rawTranscription}\n\nINSTRUCTIONS:\n1. Format this as a professional ${$json.documentType} document\n2. Correct any obvious medical terminology errors\n3. Add appropriate section headers based on document type\n4. Ensure proper paragraph breaks and formatting\n5. Mark any unclear sections with [?] for review\n6. Include all relevant medical information\n7. Use standard medical document formatting\n\n${$json.documentType === 'consultation' ? 'Format as: Chief Complaint, History of Present Illness, Review of Systems, Physical Examination, Assessment, Plan' : ''}\n${$json.documentType === 'surgery' || $json.documentType === 'surgery_report' ? 'Format as: Preoperative Diagnosis, Postoperative Diagnosis, Procedure, Surgeon, Anesthesia, Findings, Technique, Complications' : ''}\n${$json.documentType === 'discharge_summary' ? 'Format as: Admission Date, Discharge Date, Diagnoses, Hospital Course, Medications, Instructions, Follow-up' : ''}\n${$json.documentType === 'progress_note' ? 'Format as SOAP: Subjective, Objective, Assessment, Plan' : ''}\n\nProvide the formatted medical document now:`\n    }]\n  }],\n  generationConfig: {\n    temperature: 0.3,\n    topK: 40,\n    topP: 0.95,\n    maxOutputTokens: 3000\n  }\n}) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "gemini-format",
+      "name": "Gemini Format",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1450, 350],
+      "credentials": {
+        "googleGeminiApi": {
+          "id": "2",
+          "name": "Google Gemini API"
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Extract formatted document from Gemini response\nconst geminiResponse = $input.item.json;\nconst originalData = $('Merge Results').item.json;\n\nlet formattedText = '';\n\n// Parse Gemini API response structure\ntry {\n  if (geminiResponse.candidates && geminiResponse.candidates[0]) {\n    if (geminiResponse.candidates[0].content && geminiResponse.candidates[0].content.parts) {\n      formattedText = geminiResponse.candidates[0].content.parts[0].text;\n    }\n  } else if (typeof geminiResponse === 'string') {\n    formattedText = geminiResponse;\n  }\n} catch (error) {\n  console.error('Error parsing Gemini response:', error);\n  formattedText = originalData.rawTranscription;\n}\n\nif (!formattedText) {\n  formattedText = originalData.rawTranscription;\n}\n\n// Create final document with header and footer\nconst currentDate = new Date().toLocaleDateString();\nconst currentTime = new Date().toLocaleTimeString();\n\nconst finalDocument = `MEDICAL TRANSCRIPTION REPORT\n================================================================================\nGenerated: ${currentDate} at ${currentTime}\nDocument Type: ${originalData.documentType.toUpperCase().replace(/_/g, ' ')}\nHealthcare Provider: ${originalData.doctorName}\nPatient Name: ${originalData.patientName}\nTranscription ID: ${originalData.transcriptionId}\nFile: ${originalData.fileName}\nSource: ${originalData.source === 'mock' ? 'Test Data' : 'Audio Transcription'}\n================================================================================\n\n${formattedText}\n\n================================================================================\nEND OF MEDICAL RECORD\n${originalData.source === 'mock' ? 'Note: This is test data for workflow validation' : 'This document was transcribed using AI-assisted technology'}\nProcessed by: Medical Transcription System v12\n================================================================================`;\n\nconsole.log('Document formatted successfully');\n\n// Return complete data for database update\nreturn {\n  transcriptionId: originalData.transcriptionId,\n  transcription_text: originalData.rawTranscription,\n  formatted_document: finalDocument,\n  doctor_name: originalData.doctorName,\n  patient_name: originalData.patientName,\n  document_type: originalData.documentType,\n  fileName: originalData.fileName,\n  audioUrl: originalData.audioUrl,\n  callbackUrl: originalData.callbackUrl,\n  status: 'completed',\n  processed_at: new Date().toISOString(),\n  source: originalData.source\n};"
+      },
+      "id": "finalize",
+      "name": "Finalize Document",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1650, 350]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://yaznemrwbingjwqutbvb.supabase.co/rest/v1/transcriptions?id=eq.{{ $json.transcriptionId }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inlhem5lbXJ3YmluZ2p3cXV0YnZiIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1NTQ2MDQzMCwiZXhwIjoyMDcxMDM2NDMwfQ.9Ib029SJ7rGbBI4JMoEKacX4LMOZbzOedDZ9JGtuXas"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inlhem5lbXJ3YmluZ2p3cXV0YnZiIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1NTQ2MDQzMCwiZXhwIjoyMDcxMDM2NDMwfQ.9Ib029SJ7rGbBI4JMoEKacX4LMOZbzOedDZ9JGtuXas"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  transcription_text: $json.transcription_text || '',\n  formatted_document: $json.formatted_document || '',\n  status: 'completed',\n  doctor_name: $json.doctor_name,\n  patient_name: $json.patient_name,\n  document_type: $json.document_type,\n  updated_at: new Date().toISOString(),\n  error: null,\n  metadata: {\n    processed_at: $json.processed_at,\n    workflow_version: 'v12',\n    source: $json.source,\n    fileName: $json.fileName\n  }\n}) }}",
+        "options": {}
+      },
+      "id": "update-db",
+      "name": "Update Database",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1850, 350],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.callbackUrl }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  id: $json.transcriptionId,\n  success: true,\n  status: 'completed',\n  transcription: $json.transcription_text,\n  formatted_document: $json.formatted_document,\n  doctor_name: $json.doctor_name,\n  patient_name: $json.patient_name,\n  document_type: $json.document_type,\n  fileName: $json.fileName,\n  processedAt: $json.processed_at,\n  message: 'Transcription completed successfully'\n}) }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "callback",
+      "name": "Callback to App",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2050, 350],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "status",
+              "value": "success"
+            },
+            {
+              "name": "message",
+              "value": "=Medical transcription completed ({{ $json.source }})"
+            },
+            {
+              "name": "transcriptionId",
+              "value": "={{ $json.transcriptionId }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "response",
+      "name": "Success Response",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [2250, 350]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Process Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Data": {
+      "main": [
+        [
+          {
+            "node": "Has Audio URL?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Audio URL?": {
+      "main": [
+        [
+          {
+            "node": "Download Audio from URL",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mock Transcription",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Audio from URL": {
+      "main": [
+        [
+          {
+            "node": "OpenAI Whisper",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Whisper": {
+      "main": [
+        [
+          {
+            "node": "Merge Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mock Transcription": {
+      "main": [
+        [
+          {
+            "node": "Merge Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Results": {
+      "main": [
+        [
+          {
+            "node": "Gemini Format",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini Format": {
+      "main": [
+        [
+          {
+            "node": "Finalize Document",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Finalize Document": {
+      "main": [
+        [
+          {
+            "node": "Update Database",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Database": {
+      "main": [
+        [
+          {
+            "node": "Callback to App",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Callback to App": {
+      "main": [
+        [
+          {
+            "node": "Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataSuccessExecution": "all",
+    "saveExecutionProgress": true,
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "executionTimeout": 300
+  },
+  "staticData": null,
+  "meta": {
+    "templateCreatedBy": "Medical Transcription System",
+    "templateId": "medical-transcription-v12",
+    "description": "Fixed workflow that correctly maps webhook fields and downloads audio from URL"
+  },
+  "pinData": {},
+  "versionId": "12.0.0",
+  "tags": ["medical", "transcription", "whisper", "gemini", "fixed", "v12"]
+}

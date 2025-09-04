@@ -1,0 +1,146 @@
+{
+  "name": "Medical Transcription with Gemini Formatting (Sanitized)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "medical-transcribe",
+        "responseMode": "onReceived",
+        "responseData": "allEntries",
+        "options": {}
+      },
+      "id": "webhook-receiver",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ message: 'Medical transcription started', id: $json.id, status: 'processing' }) }}",
+        "options": {}
+      },
+      "id": "respond-immediately",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={{ $json.body }}",
+        "options": {}
+      },
+      "id": "extract-data",
+      "name": "Extract Request Data",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "operation": "write",
+        "fileName": "=/tmp/medical_audio_{{ $json.id }}.{{ $json.format || 'webm' }}",
+        "dataPropertyName": "audio",
+        "options": { "encoding": "base64" }
+      },
+      "id": "save-audio",
+      "name": "Save Audio File",
+      "type": "n8n-nodes-base.writeBinaryFile",
+      "typeVersion": 1,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "resource": "audio",
+        "operation": "transcribe",
+        "file": "={{ $binary.data }}",
+        "options": {
+          "language": "={{ $json.language || 'en' }}",
+          "prompt": "Medical transcription with proper medical terminology. Doctor: {{ $json.doctorName }}, Patient: {{ $json.patientName }}",
+          "temperature": 0,
+          "responseFormat": "verbose_json"
+        }
+      },
+      "id": "openai-transcribe",
+      "name": "OpenAI Transcribe",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-latest:generateContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleAiApi",
+        "method": "POST",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [ { "name": "Content-Type", "value": "application/json" } ] },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ contents: [{ parts: [{ text: `You are a professional medical transcription assistant. Your job is to format transcribed audio into accurate, well-structured medical documents.\\n\\nDocument Details:\\n- Document Type: ${$node['extract-data'].json.documentType}\\n- Doctor: ${$node['extract-data'].json.doctorName}\\n- Patient: ${$node['extract-data'].json.patientName}\\n- Date: ${new Date().toISOString().split('T')[0]}\\n\\nInstructions:\\n- Keep the wording mostly verbatim unless correcting obvious grammar or filler words like \"um\", \"uh\", \"you know\".\\n- Interpret spoken commands like \"new paragraph\", \"full stop\", or \"next section\" into proper formatting.\\n- Maintain correct medical terminology and abbreviations.\\n- Format as a professional medical document with proper structure.\\n- Do not add information not present in the original transcription.\\n- If there is anything you are unsure of put brackets around it and a ? to allow editors to manual edit it later.\\n- Ensure everything is in English and professionally formatted.\\n- Structure the document with appropriate headings and sections as needed.\\n- Return the formatted text directly without JSON or markdown formatting.\\n\\nTranscription to format:\\n${$node['openai-transcribe'].json.text}` }] }], generationConfig: { temperature: 0.1, maxOutputTokens: 8192, topP: 0.95, topK: 40 }, safetySettings: [{ category: \"HARM_CATEGORY_HARASSMENT\", threshold: \"BLOCK_NONE\" }, { category: \"HARM_CATEGORY_HATE_SPEECH\", threshold: \"BLOCK_NONE\" }, { category: \"HARM_CATEGORY_SEXUALLY_EXPLICIT\", threshold: \"BLOCK_NONE\" }, { category: \"HARM_CATEGORY_DANGEROUS_CONTENT\", threshold: \"BLOCK_NONE\" }] }) }}",
+        "options": { "timeout": 30000, "retry": { "retryOnFail": true, "maxRetries": 2, "retryInterval": 3000 } }
+      },
+      "id": "gemini-format",
+      "name": "Gemini Format Document",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1450, 300]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            { "name": "id", "value": "={{ $node['extract-data'].json.id }}" },
+            { "name": "transcription_text", "value": "={{ $node['openai-transcribe'].json.text }}" },
+            { "name": "formatted_text", "value": "={{ $json.candidates[0].content.parts[0].text }}" },
+            { "name": "status", "value": "completed" },
+            { "name": "language", "value": "={{ $node['openai-transcribe'].json.language || 'en' }}" }
+          ],
+          "number": [ { "name": "duration", "value": "={{ $node['openai-transcribe'].json.duration || 0 }}" } ],
+          "boolean": [ { "name": "is_formatted", "value": true } ],
+          "dateTime": [ { "name": "completed_at", "value": "={{ new Date().toISOString() }}" } ],
+          "json": [ { "name": "segments", "value": "={{ JSON.stringify($node['openai-transcribe'].json.segments || []) }}" } ]
+        },
+        "options": {}
+      },
+      "id": "prepare-update",
+      "name": "Prepare Update",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [1650, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $node['extract-data'].json.callbackUrl || 'http://localhost:3000/api/transcription-result-v2' }}",
+        "method": "POST",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ uploadId: $node['extract-data'].json.id, success: true, transcription: $node['openai-transcribe'].json.text, formattedText: $node['prepare-update'].json.formatted_text, documentType: $node['extract-data'].json.documentType, doctorName: $node['extract-data'].json.doctorName, patientName: $node['extract-data'].json.patientName, fileName: $node['extract-data'].json.fileName, audioUrl: $node['extract-data'].json.audioUrl, segments: $node['openai-transcribe'].json.segments, language: $node['openai-transcribe'].json.language, duration: $node['openai-transcribe'].json.duration, isFormatted: true, formattingModel: 'gemini-2.0-flash', processedAt: new Date().toISOString() }) }}",
+        "options": { "timeout": 30000, "retry": { "retryOnFail": true, "maxRetries": 3, "retryInterval": 5000 } }
+      },
+      "id": "notify-website",
+      "name": "Notify Website Complete",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1850, 300],
+      "continueOnFail": true
+    }
+  ],
+  "connections": {
+    "Webhook": { "main": [ [ { "node": "Respond to Webhook", "type": "main", "index": 0 }, { "node": "Extract Request Data", "type": "main", "index": 0 } ] ] },
+    "Extract Request Data": { "main": [ [ { "node": "Save Audio File", "type": "main", "index": 0 }, { "node": "OpenAI Transcribe", "type": "main", "index": 0 } ] ] },
+    "Save Audio File": { "main": [ [ { "node": "OpenAI Transcribe", "type": "main", "index": 0 } ] ] },
+    "OpenAI Transcribe": { "main": [ [ { "node": "Gemini Format Document", "type": "main", "index": 0 } ] ] },
+    "Gemini Format Document": { "main": [ [ { "node": "Prepare Update", "type": "main", "index": 0 } ] ] },
+    "Prepare Update": { "main": [ [ { "node": "Notify Website Complete", "type": "main", "index": 0 } ] ] }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "versionId": "medical-gemini-sanitized-v1"
+}
+
+
+

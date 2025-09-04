@@ -1,0 +1,63 @@
+# Vercel deployment ignore rules
+# This file tells Vercel which files to exclude during deployment
+
+# Dependencies (installed by Vercel during build)
+node_modules/
+.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# Build outputs
+.next/
+out/
+build/
+coverage/
+
+# Misc files and logs
+.DS_Store
+*.pem
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# TypeScript
+*.tsbuildinfo
+next-env.d.ts
+
+# Environment files
+.env*
+!.env.example
+
+# Vercel
+.vercel
+
+# Git
+.git/
+.gitignore
+
+# Native binaries (includes large Next.js SWC binaries > 100MB)
+**/*.node
+
+# Development files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Test files (if you have any)
+__tests__/
+*.test.js
+*.test.ts
+*.spec.js
+*.spec.ts
+
+# Documentation
+README.md
+docs/

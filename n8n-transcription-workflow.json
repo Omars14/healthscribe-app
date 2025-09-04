@@ -1,0 +1,358 @@
+{
+  "name": "Audio Transcription Workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "upload",
+        "responseMode": "responseNode",
+        "responseData": "allEntries",
+        "responsePropertyName": "data",
+        "responseHeaders": {
+          "entries": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [250, 300],
+      "webhookId": "audio-upload-webhook"
+    },
+    {
+      "parameters": {
+        "functionCode": "// Extract the incoming data\nconst items = $input.all();\nconst webhookData = items[0].json;\n\n// Log incoming data for debugging\nconsole.log('Received webhook data:', {\n  fileName: webhookData.fileName,\n  fileSize: webhookData.fileSize,\n  uploadId: webhookData.uploadId,\n  doctorName: webhookData.doctorName,\n  patientName: webhookData.patientName,\n  documentType: webhookData.documentType\n});\n\n// Convert base64 audio to binary\nconst audioBase64 = webhookData.audioFile;\nif (!audioBase64) {\n  throw new Error('No audio data received');\n}\n\n// Create buffer from base64\nconst audioBuffer = Buffer.from(audioBase64, 'base64');\n\n// Return both binary and JSON data\nreturn [{\n  json: {\n    fileName: webhookData.fileName || 'audio.mp3',\n    fileSize: webhookData.fileSize || audioBuffer.length,\n    fileType: webhookData.fileType || 'audio/mpeg',\n    doctorName: webhookData.doctorName || '',\n    patientName: webhookData.patientName || '',\n    documentType: webhookData.documentType || '',\n    uploadId: webhookData.uploadId,\n    uploadTime: webhookData.uploadTime || new Date().toISOString(),\n    source: webhookData.source || 'dashboard-next'\n  },\n  binary: {\n    audio: {\n      data: audioBuffer,\n      mimeType: webhookData.fileType || 'audio/mpeg',\n      fileName: webhookData.fileName || 'audio.mp3'\n    }\n  }\n}];"
+      },
+      "id": "process-audio",
+      "name": "Process Audio Data",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.openai.com/v1/audio/transcriptions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "whisper-1"
+            },
+            {
+              "name": "response_format",
+              "value": "json"
+            },
+            {
+              "name": "language",
+              "value": "en"
+            }
+          ]
+        },
+        "sendBinaryData": true,
+        "binaryPropertyName": "audio",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "whisper-api",
+      "name": "Whisper API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [650, 300],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "1",
+          "name": "OpenAI API"
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "table": "transcriptions",
+        "columns": "id,transcription_text,status,processed_at",
+        "updateKey": "id",
+        "dataMode": "autoMapInputData",
+        "options": {
+          "queryName": "match"
+        },
+        "matchingColumns": [
+          "id"
+        ],
+        "columnToMatchOn": "id"
+      },
+      "id": "update-supabase",
+      "name": "Update Supabase",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1050, 300],
+      "credentials": {
+        "supabaseApi": {
+          "id": "2",
+          "name": "Supabase API"
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "functionCode": "// Prepare data for Supabase update\nconst items = $input.all();\nconst transcriptionResult = items[0].json;\nconst metadata = items[0].json;\n\n// Extract transcription text from Whisper response\nlet transcriptionText = '';\nlet status = 'completed';\nlet error = null;\n\nif (transcriptionResult.text) {\n  transcriptionText = transcriptionResult.text;\n} else if (transcriptionResult.error) {\n  status = 'failed';\n  error = transcriptionResult.error.message || 'Transcription failed';\n  transcriptionText = '';\n} else {\n  status = 'failed';\n  error = 'No transcription text received';\n  transcriptionText = '';\n}\n\n// Format the data for Supabase update\nreturn [{\n  json: {\n    id: metadata.uploadId,\n    transcription_text: transcriptionText,\n    status: status,\n    processed_at: new Date().toISOString(),\n    error: error,\n    metadata: {\n      doctor_name: metadata.doctorName,\n      patient_name: metadata.patientName,\n      document_type: metadata.documentType,\n      file_name: metadata.fileName,\n      file_size: metadata.fileSize,\n      processed_by: 'n8n-whisper'\n    }\n  }\n}];"
+      },
+      "id": "prepare-update",
+      "name": "Prepare Supabase Update",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "values": {
+          "boolean": [
+            {
+              "name": "success",
+              "value": true
+            }
+          ],
+          "string": [
+            {
+              "name": "message",
+              "value": "=Transcription completed for ID: {{ $json.id }}"
+            },
+            {
+              "name": "transcriptionId",
+              "value": "={{ $json.id }}"
+            },
+            {
+              "name": "status",
+              "value": "={{ $json.status }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "success-response",
+      "name": "Success Response",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [1250, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems"
+      },
+      "id": "webhook-response",
+      "name": "Webhook Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1450, 300]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "table": "transcriptions",
+        "columns": "id,status,error,processed_at",
+        "updateKey": "id",
+        "dataMode": "defineBelow",
+        "columnToMatchOn": "id",
+        "value1": "={{ $json.uploadId }}",
+        "value2": "failed",
+        "value3": "={{ $json.error?.message || 'Processing failed' }}",
+        "value4": "={{ new Date().toISOString() }}"
+      },
+      "id": "update-error",
+      "name": "Update Error Status",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [850, 500],
+      "credentials": {
+        "supabaseApi": {
+          "id": "2",
+          "name": "Supabase API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "values": {
+          "boolean": [
+            {
+              "name": "success",
+              "value": false
+            }
+          ],
+          "string": [
+            {
+              "name": "message",
+              "value": "=Transcription failed: {{ $json.error?.message || 'Unknown error' }}"
+            },
+            {
+              "name": "transcriptionId",
+              "value": "={{ $json.uploadId }}"
+            },
+            {
+              "name": "status",
+              "value": "failed"
+            },
+            {
+              "name": "error",
+              "value": "={{ $json.error?.message || $json.error || 'Processing failed' }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "error-response",
+      "name": "Error Response",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [1050, 500]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Extract error information\nconst items = $input.all();\nconst error = items[0].json;\nconst metadata = items[0].json;\n\n// Log the error for debugging\nconsole.error('Whisper API Error:', error);\n\nreturn [{\n  json: {\n    uploadId: metadata.uploadId || 'unknown',\n    error: error,\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "handle-error",
+      "name": "Handle Error",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [650, 500]
+    }
+  ],
+  "connections": {
+    "webhook-trigger": {
+      "main": [
+        [
+          {
+            "node": "process-audio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "process-audio": {
+      "main": [
+        [
+          {
+            "node": "whisper-api",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "whisper-api": {
+      "main": [
+        [
+          {
+            "node": "prepare-update",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "handle-error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "prepare-update": {
+      "main": [
+        [
+          {
+            "node": "update-supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "update-supabase": {
+      "main": [
+        [
+          {
+            "node": "success-response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "update-error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "success-response": {
+      "main": [
+        [
+          {
+            "node": "webhook-response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "handle-error": {
+      "main": [
+        [
+          {
+            "node": "update-error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "update-error": {
+      "main": [
+        [
+          {
+            "node": "error-response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "error-response": {
+      "main": [
+        [
+          {
+            "node": "webhook-response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": ""
+  },
+  "versionId": "1.0.0",
+  "tags": [],
+  "pinData": {},
+  "staticData": null
+}

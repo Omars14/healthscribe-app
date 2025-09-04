@@ -1,0 +1,310 @@
+{
+  "name": "Medical Transcription - Vercel Ready",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "medical-transcribe-v2",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "ce4c026d-f586-48b5-b4ae-91053a42aa4e",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -800,
+        -48
+      ],
+      "webhookId": "medical-transcribe-v2"
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.audioUrl }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          },
+          "timeout": 30000
+        }
+      },
+      "id": "d945e442-1c74-486a-b569-405d7f71572e",
+      "name": "Download Audio",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -576,
+        -64
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/audio/transcriptions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "openAiApi",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "whisper-1"
+            },
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "data"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "2db8bb02-cd63-4a43-9d52-1a3de8592762",
+      "name": "Whisper Transcribe",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -384,
+        -96
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "lwRainkfkDaloiF3",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Get the transcription text and original webhook data\nconst whisperResult = $input.item.json;\nconst webhookData = $('Webhook').item.json;\n\n// Extract transcription\nconst transcriptionText = whisperResult.text || whisperResult.transcription || 'No transcription available';\n\n// Pass all data forward\nreturn {\n  // From webhook - direct access to json properties\n  transcriptionId: webhookData.id,\n  doctorName: webhookData.doctorName,\n  patientName: webhookData.patientName,\n  documentType: webhookData.documentType,\n  fileName: webhookData.fileName,\n  audioUrl: webhookData.audioUrl,\n  callbackUrl: webhookData.callbackUrl,\n  \n  // Transcription\n  rawTranscription: transcriptionText\n};"
+      },
+      "id": "79df8732-f146-4777-b409-a2a91ef760eb",
+      "name": "Prepare for Gemini",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -160,
+        -144
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ `You are a professional medical transcriptionist.\n\nYour task: Format the raw transcription into a clean, professional ${$json.documentType || 'clinical'} document.\n\nDocument information:\n- Type: ${$json.documentType || 'Unknown'}\n- Doctor: ${$json.doctorName || 'Unknown'}\n- Patient: ${$json.patientName || 'Unknown'}\n- Date: ${new Date().toLocaleDateString()}\n- File: ${$json.fileName || ''}\n- Transcription ID: ${$json.transcriptionId || ''}\n\nRaw transcription:\n${$json.rawTranscription}\n\nInstructions:\n1) Correct medical terminology and grammar\n2) Use appropriate section headers for the document type\n3) Mark unclear sections with [?]\n4) If documentType is 'surgery' or 'surgery_report', include: Preoperative Diagnosis, Postoperative Diagnosis, Procedure, Findings, Technique\n5) If documentType is 'consultation', include: Chief Complaint, History, Examination, Assessment, Plan\n6) If documentType is 'progress_note', include: Subjective, Objective, Assessment, Plan\n7) If documentType is 'discharge_summary', include: Admission Date, Discharge Date, Diagnoses, Hospital Course, Discharge Instructions\n\nOutput requirements:\n- Return ONLY the formatted document content.\n- Do not add any explanations or code fences.\n` }}",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2.2,
+      "position": [
+        -32,
+        -288
+      ],
+      "id": "c6e66d72-b245-4ad2-9b47-e73f81d02268",
+      "name": "AI Agent"
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-2.5-flash-lite",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        -32,
+        32
+      ],
+      "id": "ec5a1000-0dbc-44df-9e6d-2f6ce3c90186",
+      "name": "Google Gemini Chat Model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "lvO6ZGov2y4ToxsL",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Get Agent response and original data\nconst agentResponse = $input.item.json;\nconst originalData = $('Prepare for Gemini').item.json;\n\n// Try to extract formatted text from different possible shapes\nlet formattedText = '';\n\nif (typeof agentResponse === 'string') {\n  formattedText = agentResponse;\n} else if (agentResponse?.text && typeof agentResponse.text === 'string') {\n  formattedText = agentResponse.text;\n} else if (agentResponse?.output && typeof agentResponse.output === 'string') {\n  formattedText = agentResponse.output;\n} else if (agentResponse?.message?.content && Array.isArray(agentResponse.message.content)) {\n  const part = agentResponse.message.content[0];\n  if (part?.text) formattedText = part.text;\n}\n\n// Fallback to raw transcription if we couldn't get formatted text\nif (!formattedText) {\n  formattedText = originalData.rawTranscription || '';\n}\n\n// Add header and footer to create a complete formatted document\nconst finalDocument = `MEDICAL TRANSCRIPTION REPORT\n================================================================================\nDate: ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}\nDocument Type: ${(originalData.documentType || '').toUpperCase().replace('_', ' ')}\nDoctor: ${originalData.doctorName || 'Unknown'}\nPatient: ${originalData.patientName || 'Unknown'}\nFile: ${originalData.fileName || ''}\nTranscription ID: ${originalData.transcriptionId || ''}\n================================================================================\n\n${formattedText}\n\n================================================================================\nEND OF MEDICAL RECORD\nTranscribed and formatted by AI Medical Transcription System\n================================================================================`;\n\n// Combine raw and formatted into a single transcription field\nconst combinedTranscription = `=== RAW TRANSCRIPTION ===\\n${originalData.rawTranscription || ''}\\n\\n=== FORMATTED DOCUMENT ===\\n${finalDocument}`;\n\n// Prepare data for callback to app\nreturn {\n  uploadId: originalData.transcriptionId,\n  transcription: combinedTranscription,\n  success: true,\n  fileName: originalData.fileName,\n  doctorName: originalData.doctorName,\n  patientName: originalData.patientName,\n  documentType: originalData.documentType,\n  audioUrl: originalData.audioUrl,\n  callbackUrl: originalData.callbackUrl\n};"
+      },
+      "id": "8ec7e4bc-b592-443d-b16f-a68a5782484b",
+      "name": "Prepare Callback Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        256,
+        -32
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.callbackUrl }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  uploadId: $json.uploadId,\n  transcription: $json.transcription,\n  success: $json.success,\n  fileName: $json.fileName,\n  doctorName: $json.doctorName,\n  patientName: $json.patientName,\n  documentType: $json.documentType,\n  audioUrl: $json.audioUrl\n}) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "472cc9f7-4804-416d-8fbe-ddf3afcaf3e0",
+      "name": "Send to App API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        464,
+        -32
+      ]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "status",
+              "value": "success"
+            },
+            {
+              "name": "message",
+              "value": "Transcription completed and sent to application"
+            },
+            {
+              "name": "transcriptionId",
+              "value": "={{ $('Prepare Callback Data').item.json.uploadId }}"
+            },
+            {
+              "name": "timestamp",
+              "value": "={{ new Date().toISOString() }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "bcff3755-2813-47cc-9d9c-a2ec85574ab3",
+      "name": "Response",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        656,
+        -32
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Download Audio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Audio": {
+      "main": [
+        [
+          {
+            "node": "Whisper Transcribe",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Whisper Transcribe": {
+      "main": [
+        [
+          {
+            "node": "Prepare for Gemini",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare for Gemini": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Prepare Callback Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Callback Data": {
+      "main": [
+        [
+          {
+            "node": "Send to App API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send to App API": {
+      "main": [
+        [
+          {
+            "node": "Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "vercel-ready-v2",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "2a0869a9b2a39ad88a1fdc31d2904bca4a19ec1a7bbf1486bac7431c1fcb096b"
+  },
+  "id": "medical-transcription-vercel",
+  "tags": []
+}

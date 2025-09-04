@@ -1,0 +1,38 @@
+========================================
+EASIEST FIX FOR N8N JSON ERROR
+========================================
+
+Since n8n is having trouble with the JSON formatting,
+let's modify the Finalize node to output the exact
+format your API expects.
+
+In your n8n workflow, in the "Finalize" Code node,
+REPLACE the entire return statement with this:
+
+----------------------------------------
+
+return {
+  uploadId: originalData.transcriptionId,
+  transcription: combinedTranscription,
+  success: true,
+  fileName: originalData.fileName,
+  doctorName: originalData.doctorName,
+  patientName: originalData.patientName,  
+  documentType: originalData.documentType,
+  audioUrl: originalData.audioUrl,
+  
+  // Keep the callback URL
+  callbackUrl: originalData.callbackUrl
+};
+
+----------------------------------------
+
+This outputs the EXACT field names your API expects
+(no underscores), so you don't need to transform them.
+
+Then in the "Send to App API" node:
+1. Set "Specify Body" to "Expression"
+2. Use just: {{ $json }}
+
+This will send the data exactly as formatted
+by the Finalize node, avoiding any JSON parsing issues.

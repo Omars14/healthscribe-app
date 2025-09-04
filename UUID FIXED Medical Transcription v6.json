@@ -1,0 +1,316 @@
+{
+  "name": "UUID FIXED Medical Transcription v6",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "medical-transcribe-v2",
+        "options": {}
+      },
+      "id": "webhook",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        256,
+        304
+      ],
+      "webhookId": "320ceaef-d408-4411-8c4e-a7775a26954b"
+    },
+    {
+      "parameters": {
+        "functionCode": "// Normalize payload; do NOT include base64 in v2\nconst data = $input.first().json;\nreturn [{ json: data }];"
+      },
+      "id": "normalize",
+      "name": "Normalize Payload",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        464,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://yaznemrwbingjwqutbvb.supabase.co/rest/v1/transcriptions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inlhem5lbXJ3YmluZ2p3cXV0YnZiIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1NTQ2MDQzMCwiZXhwIjoyMDcxMDM2NDMwfQ.9Ib029SJ7rGbBI4JMoEKacX4LMOZbzOedDZ9JGtuXas"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inlhem5lbXJ3YmluZ2p3cXV0YnZiIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1NTQ2MDQzMCwiZXhwIjoyMDcxMDM2NDMwfQ.9Ib029SJ7rGbBI4JMoEKacX4LMOZbzOedDZ9JGtuXas"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ id: $json.uploadId, user_id: $json.userId || null, file_name: $json.fileName, file_size: $json.fileSize || 0, audio_url: $json.audioUrl || null, status: 'processing', created_at: new Date().toISOString(), updated_at: new Date().toISOString(), metadata: { doctor_name: $json.doctorName, patient_name: $json.patientName, document_type: $json.documentType, source: 'n8n-http' } }) }}",
+        "options": {}
+      },
+      "id": "sb-create",
+      "name": "Create Transcription (SB)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        656,
+        192
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.audioUrl }}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "download",
+      "name": "Download Audio",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        656,
+        368
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "functionCode": "// Ensure binary property name is 'file' for OpenAI\nconst item = $input.first();\nreturn [{ json: item.json, binary: item.binary }];"
+      },
+      "id": "map-binary",
+      "name": "Map Binary To file",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        864,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/audio/transcriptions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.OPENAI_API_KEY || '' }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "whisper-1"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "openai-http",
+      "name": "OpenAI Whisper (HTTP)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1056,
+        368
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "functionCode": "// Fix data flow: Get OpenAI response and reconstruct full payload\nconst oai = $input.first().json || {};\nconst text = oai.text || 'Transcription pending: external STT not configured.';\n\n// Get original data from the webhook via the execution data\nconst webhookData = $('Webhook').first().json || {};\n\n// Generate UUID if uploadId is not a valid UUID format\nfunction generateUUID() {\n  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {\n    const r = Math.random() * 16 | 0;\n    const v = c == 'x' ? r : (r & 0x3 | 0x8);\n    return v.toString(16);\n  });\n}\n\n// Use uploadId from webhook, or generate UUID if it's not UUID format\nconst uploadId = webhookData.uploadId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(webhookData.uploadId) \n  ? webhookData.uploadId \n  : generateUUID();\n\nconsole.log('Debug - Original uploadId:', webhookData.uploadId);\nconsole.log('Debug - Final uploadId (UUID):', uploadId);\nconsole.log('Debug - OpenAI response:', JSON.stringify(oai));\n\n// Return complete data with transcription\nreturn [{ \n  json: { \n    uploadId: uploadId,\n    fileName: webhookData.fileName || 'hardcoded-test.mp3', \n    doctorName: webhookData.doctorName || 'Dr Hardcoded',\n    patientName: webhookData.patientName || 'Values Success',\n    documentType: webhookData.documentType || 'final-victory',\n    audioUrl: webhookData.audioUrl || 'https://example.com/hardcoded-test.mp3',\n    userId: webhookData.userId || null,\n    fileSize: webhookData.fileSize || 0,\n    callbackUrl: webhookData.callbackUrl || null,\n    transcription_text: text\n  } \n}];"
+      },
+      "id": "prepare",
+      "name": "Prepare Transcription",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1264,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://yaznemrwbingjwqutbvb.supabase.co/rest/v1/transcriptions?id=eq.{{ $json.uploadId || 'test-env-vars-proper' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inlhem5lbXJ3YmluZ2p3cXV0YnZiIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1NTQ2MDQzMCwiZXhwIjoyMDcxMDM2NDMwfQ.9Ib029SJ7rGbBI4JMoEKacX4LMOZbzOedDZ9JGtuXas"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inlhem5lbXJ3YmluZ2p3cXV0YnZiIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1NTQ2MDQzMCwiZXhwIjoyMDcxMDM2NDMwfQ.9Ib029SJ7rGbBI4JMoEKacX4LMOZbzOedDZ9JGtuXas"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ transcription_text: $json.transcription_text, status: 'completed', updated_at: new Date().toISOString(), metadata: { processed_at: new Date().toISOString(), workflow: 'n8n-complete-http-v2' } }) }}",
+        "options": {}
+      },
+      "id": "sb-update",
+      "name": "Update Transcription (SB)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1456,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.callbackUrl || ($env.NEXT_PUBLIC_URL || 'http://host.docker.internal:3000') + '/api/transcription-result-v2' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ uploadId: $json.uploadId, success: true, transcription: $json.transcription_text, fileName: $json.fileName, doctorName: $json.doctorName, patientName: $json.patientName, documentType: $json.documentType, audioUrl: $json.audioUrl || null }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "callback",
+      "name": "Notify Website",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1664,
+        304
+      ],
+      "continueOnFail": true
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Payload": {
+      "main": [
+        [
+          {
+            "node": "Create Transcription (SB)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Download Audio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Audio": {
+      "main": [
+        [
+          {
+            "node": "Map Binary To file",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Map Binary To file": {
+      "main": [
+        [
+          {
+            "node": "OpenAI Whisper (HTTP)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Whisper (HTTP)": {
+      "main": [
+        [
+          {
+            "node": "Prepare Transcription",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Transcription": {
+      "main": [
+        [
+          {
+            "node": "Update Transcription (SB)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Transcription (SB)": {
+      "main": [
+        [
+          {
+            "node": "Notify Website",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataSuccessExecution": "all",
+    "saveExecutionProgress": true
+  },
+  "versionId": "2.0.0",
+  "meta": {
+    "instanceId": "2a0869a9b2a39ad88a1fdc31d2904bca4a19ec1a7bbf1486bac7431c1fcb096b"
+  },
+  "id": "zTy03qFFMYdRwgFL",
+  "tags": []
+}

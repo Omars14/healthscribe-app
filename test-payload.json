@@ -1,0 +1,11 @@
+{
+  "body": {
+    "uploadId": "test-123",
+    "audioUrl": "https://yaznemrwbingjwqutbvb.supabase.co/storage/v1/object/public/audio-files/test.mp3",
+    "fileName": "test.mp3",
+    "doctorName": "Dr. Test",
+    "patientName": "Test Patient",
+    "documentType": "consultation",
+    "callbackUrl": "https://dashboard-next-j55aknxdc-omar-salems-projects-e9d8c3df.vercel.app/api/transcription-result-v2"
+  }
+}

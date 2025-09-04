@@ -1,0 +1,280 @@
+{
+  "name": "Medical Transcription Fixed v14",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "medical-transcribe-v2",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "webhook",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [250, 300],
+      "webhookId": "medical-transcribe-v2"
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.body.audioUrl }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          },
+          "timeout": 30000
+        }
+      },
+      "id": "download",
+      "name": "Download Audio",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/audio/transcriptions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "openAiApi",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "whisper-1"
+            },
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "data"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "whisper",
+      "name": "Whisper Transcribe",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [650, 300],
+      "credentials": {
+        "openAiApi": {
+          "id": "1",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Get the transcription text and original webhook data\nconst whisperResult = $input.item.json;\nconst webhookData = $('Webhook').item.json.body;\n\n// Extract transcription\nconst transcriptionText = whisperResult.text || whisperResult.transcription || 'No transcription available';\n\n// Pass all data forward\nreturn {\n  // From webhook body\n  transcriptionId: webhookData.uploadId,\n  doctorName: webhookData.doctorName,\n  patientName: webhookData.patientName,\n  documentType: webhookData.documentType,\n  fileName: webhookData.fileName,\n  audioUrl: webhookData.audioUrl,\n  callbackUrl: webhookData.callbackUrl,\n  \n  // Transcription\n  rawTranscription: transcriptionText\n};"
+      },
+      "id": "prepare",
+      "name": "Prepare for Gemini",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleGeminiApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  contents: [{\n    parts: [{\n      text: `You are a professional medical transcriptionist. Format the following medical transcription into a clean, professional document.\n\nDOCUMENT INFORMATION:\n- Type: ${$json.documentType}\n- Doctor: ${$json.doctorName}\n- Patient: ${$json.patientName}\n- Date: ${new Date().toLocaleDateString()}\n\nRAW TRANSCRIPTION:\n${$json.rawTranscription}\n\nINSTRUCTIONS:\n1. Format this as a professional ${$json.documentType} document\n2. Correct medical terminology\n3. Add appropriate section headers\n4. Mark unclear sections with [?]\n\n${$json.documentType === 'surgery' ? 'Use surgery report format with: Preoperative Diagnosis, Postoperative Diagnosis, Procedure, Findings, Technique' : ''}\n${$json.documentType === 'consultation' ? 'Use consultation format with: Chief Complaint, History, Examination, Assessment, Plan' : ''}\n\nProvide the formatted document:`\n    }]\n  }],\n  generationConfig: {\n    temperature: 0.3,\n    maxOutputTokens: 3000\n  }\n}) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "gemini",
+      "name": "Gemini Format",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1050, 300],
+      "credentials": {
+        "googleGeminiApi": {
+          "id": "2",
+          "name": "Google Gemini API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Get Gemini response and original data\nconst geminiResponse = $input.item.json;\nconst originalData = $('Prepare for Gemini').item.json;\n\n// Extract formatted text from Gemini response\nlet formattedText = '';\nif (geminiResponse.candidates && geminiResponse.candidates[0]) {\n  if (geminiResponse.candidates[0].content && geminiResponse.candidates[0].content.parts) {\n    formattedText = geminiResponse.candidates[0].content.parts[0].text;\n  }\n}\n\nif (!formattedText) {\n  formattedText = originalData.rawTranscription;\n}\n\n// Add header and footer\nconst finalDocument = `MEDICAL TRANSCRIPTION REPORT\n================================================================================\nDate: ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}\nDocument Type: ${originalData.documentType.toUpperCase()}\nDoctor: ${originalData.doctorName}\nPatient: ${originalData.patientName}\nFile: ${originalData.fileName}\nTranscription ID: ${originalData.transcriptionId}\n================================================================================\n\n${formattedText}\n\n================================================================================\nEND OF MEDICAL RECORD\nTranscribed and formatted by AI Medical Transcription System\n================================================================================`;\n\nreturn {\n  transcriptionId: originalData.transcriptionId,\n  transcription_text: originalData.rawTranscription,\n  formatted_document: finalDocument,\n  doctor_name: originalData.doctorName,\n  patient_name: originalData.patientName,\n  document_type: originalData.documentType,\n  fileName: originalData.fileName,\n  audioUrl: originalData.audioUrl,\n  callbackUrl: originalData.callbackUrl,\n  status: 'completed',\n  processed_at: new Date().toISOString()\n};"
+      },
+      "id": "finalize",
+      "name": "Finalize",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1250, 300]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://yaznemrwbingjwqutbvb.supabase.co/rest/v1/transcriptions?id=eq.{{ $json.transcriptionId }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inlhem5lbXJ3YmluZ2p3cXV0YnZiIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1NTQ2MDQzMCwiZXhwIjoyMDcxMDM2NDMwfQ.9Ib029SJ7rGbBI4JMoEKacX4LMOZbzOedDZ9JGtuXas"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inlhem5lbXJ3YmluZ2p3cXV0YnZiIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1NTQ2MDQzMCwiZXhwIjoyMDcxMDM2NDMwfQ.9Ib029SJ7rGbBI4JMoEKacX4LMOZbzOedDZ9JGtuXas"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  transcription_text: $json.transcription_text,\n  formatted_document: $json.formatted_document,\n  status: 'completed',\n  doctor_name: $json.doctor_name,\n  patient_name: $json.patient_name,\n  document_type: $json.document_type,\n  updated_at: new Date().toISOString()\n}) }}",
+        "options": {}
+      },
+      "id": "update",
+      "name": "Update Supabase",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1450, 300]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "status",
+              "value": "success"
+            },
+            {
+              "name": "message",
+              "value": "Transcription completed"
+            },
+            {
+              "name": "transcriptionId",
+              "value": "={{ $('Finalize').item.json.transcriptionId }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "response",
+      "name": "Response",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [1650, 300]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Download Audio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Audio": {
+      "main": [
+        [
+          {
+            "node": "Whisper Transcribe",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Whisper Transcribe": {
+      "main": [
+        [
+          {
+            "node": "Prepare for Gemini",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare for Gemini": {
+      "main": [
+        [
+          {
+            "node": "Gemini Format",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini Format": {
+      "main": [
+        [
+          {
+            "node": "Finalize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Finalize": {
+      "main": [
+        [
+          {
+            "node": "Update Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Supabase": {
+      "main": [
+        [
+          {
+            "node": "Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataSuccessExecution": "all",
+    "saveExecutionProgress": true,
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "executionTimeout": 300
+  },
+  "staticData": null,
+  "meta": {
+    "templateCreatedBy": "Medical Transcription System",
+    "templateId": "medical-transcription-v14-fixed",
+    "description": "Fixed workflow with correct webhook body access"
+  },
+  "pinData": {},
+  "versionId": "14.0.0",
+  "tags": ["medical", "transcription", "fixed", "v14"]
+}

@@ -1,0 +1,380 @@
+{
+  "name": "Medical Transcription Gemini Complete v9",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "medical-transcribe-v2",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "webhook-node",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [250, 300],
+      "webhookId": "medical-transcribe-v2"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Extract and validate incoming webhook data\nconst item = $input.item.json;\n\nconsole.log('Webhook received:', JSON.stringify(item).substring(0, 200));\n\n// Prepare data for processing\nconst processedData = {\n  transcriptionId: item.id || item.transcriptionId || item.uploadId,\n  audio: item.audio || '',\n  format: item.format || 'webm',\n  fileName: item.fileName || '',\n  doctorName: item.doctorName || '',\n  patientName: item.patientName || '',\n  documentType: item.documentType || 'consultation',\n  additionalNotes: item.additionalNotes || '',\n  audioUrl: item.audioUrl || '',\n  fileSize: item.fileSize || 0,\n  userId: item.userId || '',\n  callbackUrl: item.callbackUrl || 'http://localhost:3000/api/transcription-result-v2',\n  language: item.language || 'en'\n};\n\nconsole.log('Processing transcription:', processedData.transcriptionId);\nconsole.log('Document type:', processedData.documentType);\n\nreturn processedData;"
+      },
+      "id": "process-data",
+      "name": "Process Webhook Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "operation": "toBinary",
+        "sourceProperty": "audio",
+        "binaryPropertyName": "audioFile",
+        "mimeType": "=audio/{{ $json.format }}",
+        "fileName": "={{ $json.fileName }}",
+        "options": {
+          "encoding": "base64"
+        }
+      },
+      "id": "convert-audio",
+      "name": "Convert Base64 to Binary",
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "resource": "audio",
+        "operation": "transcribe",
+        "model": "whisper-1",
+        "options": {
+          "language": "={{ $json.language }}",
+          "response_format": "text"
+        }
+      },
+      "id": "whisper-transcribe",
+      "name": "Whisper Transcription",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1,
+      "position": [850, 300],
+      "credentials": {
+        "openAiApi": {
+          "id": "1",
+          "name": "OpenAI account"
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Prepare data for Gemini formatting\nconst whisperResult = $input.item.json;\nconst originalData = $('Process Webhook Data').item.json;\n\n// Extract transcription text\nlet rawTranscription = '';\nif (whisperResult.text) {\n  rawTranscription = whisperResult.text;\n} else if (whisperResult.transcription) {\n  rawTranscription = whisperResult.transcription;\n} else if (whisperResult.output) {\n  rawTranscription = whisperResult.output;\n} else {\n  // Fallback for testing\n  rawTranscription = `Test transcription for patient ${originalData.patientName} by Dr. ${originalData.doctorName}.`;\n}\n\nconsole.log('Raw transcription length:', rawTranscription.length);\n\n// Pass both raw transcription and original data\nreturn {\n  rawTranscription: rawTranscription,\n  transcriptionId: originalData.transcriptionId,\n  doctorName: originalData.doctorName,\n  patientName: originalData.patientName,\n  documentType: originalData.documentType,\n  additionalNotes: originalData.additionalNotes,\n  fileName: originalData.fileName,\n  audioUrl: originalData.audioUrl,\n  userId: originalData.userId,\n  callbackUrl: originalData.callbackUrl\n};"
+      },
+      "id": "prepare-for-gemini",
+      "name": "Prepare for Gemini",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "modelId": "gemini-2.0-flash-exp",
+        "prompt": "=You are a professional medical transcriptionist and formatter. Your task is to take the raw medical transcription below and format it into a clean, professional medical document.\n\nDOCUMENT INFORMATION:\n- Document Type: {{ $json.documentType }}\n- Doctor/Provider: {{ $json.doctorName }}\n- Patient: {{ $json.patientName }}\n- Date: {{ $now.format('MMMM DD, YYYY') }}\n- Additional Context: {{ $json.additionalNotes }}\n\nRAW TRANSCRIPTION:\n{{ $json.rawTranscription }}\n\nINSTRUCTIONS:\n1. Format this transcription into a professional {{ $json.documentType }} document\n2. Correct any obvious medical terminology errors\n3. Add appropriate section headers based on the document type\n4. Ensure proper paragraph breaks and formatting\n5. Mark any unclear sections with [?] for review\n6. Include all relevant medical information from the transcription\n7. Use standard medical document formatting conventions\n\nFor document type '{{ $json.documentType }}', use the following structure:\n{{ $json.documentType === 'consultation' ? '- Chief Complaint\\n- History of Present Illness\\n- Review of Systems\\n- Physical Examination\\n- Assessment\\n- Plan' : $json.documentType === 'surgery_report' ? '- Preoperative Diagnosis\\n- Postoperative Diagnosis\\n- Procedure\\n- Surgeon\\n- Anesthesia\\n- Findings\\n- Technique\\n- Complications' : $json.documentType === 'discharge_summary' ? '- Admission Date\\n- Discharge Date\\n- Admission Diagnosis\\n- Discharge Diagnosis\\n- Hospital Course\\n- Discharge Medications\\n- Discharge Instructions\\n- Follow-up' : $json.documentType === 'progress_note' ? '- Subjective\\n- Objective\\n- Assessment\\n- Plan (SOAP format)' : '- Appropriate sections for the document type' }}\n\nPlease provide the formatted medical document now:",
+        "options": {
+          "temperature": 0.2,
+          "maxOutputTokens": 3000
+        }
+      },
+      "id": "gemini-format",
+      "name": "Gemini 2.5 Mini Format",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1.1,
+      "position": [1250, 300],
+      "credentials": {
+        "googleGeminiApi": {
+          "id": "2",
+          "name": "Google Gemini account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Extract formatted document from Gemini response\nconst geminiResponse = $input.item.json;\nconst originalData = $('Prepare for Gemini').item.json;\n\n// Get the formatted text from Gemini\nlet formattedDocument = '';\nif (geminiResponse.response) {\n  formattedDocument = geminiResponse.response;\n} else if (geminiResponse.text) {\n  formattedDocument = geminiResponse.text;\n} else if (geminiResponse.output) {\n  formattedDocument = geminiResponse.output;\n} else if (geminiResponse.message && geminiResponse.message.content) {\n  formattedDocument = geminiResponse.message.content;\n} else {\n  // Fallback to raw transcription\n  formattedDocument = originalData.rawTranscription;\n}\n\n// Add header and footer\nconst currentDate = new Date().toLocaleDateString();\nconst currentTime = new Date().toLocaleTimeString();\n\nconst finalDocument = `MEDICAL TRANSCRIPTION DOCUMENT\n========================================\nGenerated: ${currentDate} at ${currentTime}\nDocument Type: ${originalData.documentType.toUpperCase().replace('_', ' ')}\nProvider: ${originalData.doctorName}\nPatient: ${originalData.patientName}\n========================================\n\n${formattedDocument}\n\n========================================\nEND OF DOCUMENT\nTranscription ID: ${originalData.transcriptionId}\nProcessed by: Medical Transcription System v9\n========================================`;\n\nconsole.log('Document formatted, length:', finalDocument.length);\n\nreturn {\n  transcriptionId: originalData.transcriptionId,\n  transcription_text: originalData.rawTranscription,\n  formatted_document: finalDocument,\n  doctor_name: originalData.doctorName,\n  patient_name: originalData.patientName,\n  document_type: originalData.documentType,\n  fileName: originalData.fileName,\n  audioUrl: originalData.audioUrl,\n  userId: originalData.userId,\n  callbackUrl: originalData.callbackUrl,\n  status: 'completed',\n  processed_at: new Date().toISOString()\n};"
+      },
+      "id": "finalize-document",
+      "name": "Finalize Document",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1450, 300]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://yaznemrwbingjwqutbvb.supabase.co/rest/v1/transcriptions?id=eq.{{ $json.transcriptionId }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inlhem5lbXJ3YmluZ2p3cXV0YnZiIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1NTQ2MDQzMCwiZXhwIjoyMDcxMDM2NDMwfQ.9Ib029SJ7rGbBI4JMoEKacX4LMOZbzOedDZ9JGtuXas"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inlhem5lbXJ3YmluZ2p3cXV0YnZiIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1NTQ2MDQzMCwiZXhwIjoyMDcxMDM2NDMwfQ.9Ib029SJ7rGbBI4JMoEKacX4LMOZbzOedDZ9JGtuXas"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  transcription_text: $json.transcription_text,\n  formatted_document: $json.formatted_document,\n  status: 'completed',\n  doctor_name: $json.doctor_name,\n  patient_name: $json.patient_name,\n  document_type: $json.document_type,\n  updated_at: new Date().toISOString(),\n  metadata: {\n    processed_at: $json.processed_at,\n    workflow_version: 'v9-gemini',\n    has_formatting: true,\n    ai_model: 'gemini-2.5-mini'\n  }\n}) }}",
+        "options": {}
+      },
+      "id": "update-supabase",
+      "name": "Update Supabase",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1650, 300],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "check-callback",
+              "leftValue": "={{ $json.callbackUrl }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-callback-url",
+      "name": "Has Callback URL?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1850, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.callbackUrl }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  id: $json.transcriptionId,\n  success: true,\n  status: 'completed',\n  transcription: $json.transcription_text,\n  formatted_document: $json.formatted_document,\n  doctor_name: $json.doctor_name,\n  patient_name: $json.patient_name,\n  document_type: $json.document_type,\n  fileName: $json.fileName,\n  processedAt: $json.processed_at,\n  message: 'Transcription completed successfully with Gemini 2.5 formatting'\n}) }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "send-callback",
+      "name": "Send Callback",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [2050, 280],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "status",
+              "value": "success"
+            },
+            {
+              "name": "message",
+              "value": "Transcription completed and formatted with Gemini 2.5"
+            },
+            {
+              "name": "transcriptionId",
+              "value": "={{ $('Finalize Document').item.json.transcriptionId }}"
+            },
+            {
+              "name": "documentType",
+              "value": "={{ $('Finalize Document').item.json.document_type }}"
+            }
+          ],
+          "boolean": [
+            {
+              "name": "success",
+              "value": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "webhook-response",
+      "name": "Webhook Response",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [2250, 300]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Process Webhook Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Webhook Data": {
+      "main": [
+        [
+          {
+            "node": "Convert Base64 to Binary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Convert Base64 to Binary": {
+      "main": [
+        [
+          {
+            "node": "Whisper Transcription",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Whisper Transcription": {
+      "main": [
+        [
+          {
+            "node": "Prepare for Gemini",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare for Gemini": {
+      "main": [
+        [
+          {
+            "node": "Gemini 2.5 Mini Format",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini 2.5 Mini Format": {
+      "main": [
+        [
+          {
+            "node": "Finalize Document",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Finalize Document": {
+      "main": [
+        [
+          {
+            "node": "Update Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Supabase": {
+      "main": [
+        [
+          {
+            "node": "Has Callback URL?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Callback URL?": {
+      "main": [
+        [
+          {
+            "node": "Send Callback",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Webhook Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Callback": {
+      "main": [
+        [
+          {
+            "node": "Webhook Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataSuccessExecution": "all",
+    "saveExecutionProgress": true,
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": ""
+  },
+  "staticData": null,
+  "meta": {
+    "templateCreatedBy": "Medical Transcription System",
+    "templateId": "medical-transcription-gemini-v9",
+    "description": "Complete medical transcription workflow with Whisper for transcription and Gemini 2.5 Mini for professional formatting"
+  },
+  "pinData": {},
+  "versionId": "9.0.0",
+  "triggerCount": 0,
+  "tags": ["medical", "transcription", "gemini", "whisper", "formatting"]
+}

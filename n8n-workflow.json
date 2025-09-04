@@ -1,0 +1,117 @@
+{
+  "name": "Medical Transcription",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "upload",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        240,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Check if the file content is provided directly or needs to be fetched\nif ($json.body.fileContent) {\n  // If content is provided, decode it and prepare for transcription\n  const fileBuffer = Buffer.from($json.body.fileContent, 'base64');\n  // For simplicity, we assume a transcription service that accepts a buffer\n  // In a real scenario, you might need to save to a temp file\n  $items[0].json.audio_buffer = fileBuffer;\n  return $items;\n} else if ($json.body.fileReference) {\n  // If a file reference is provided, fetch it from Supabase Storage\n  // This requires Supabase credentials to be configured in n8n\n  const signedUrl = $json.body.fileReference.signedUrl;\n  const response = await fetch(signedUrl);\n  if (!response.ok) {\n    throw new Error(`Failed to fetch audio from Supabase: ${response.statusText}`);\n  }\n  const fileBuffer = Buffer.from(await response.arrayBuffer());\n  $items[0].json.audio_buffer = fileBuffer;\n  return $items;\n} else {\n  throw new Error('No audio data or reference found in webhook payload');\n}"
+      },
+      "name": "Get Audio File",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        460,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "// This is a placeholder for your chosen transcription service (e.g., OpenAI Whisper, Google STT)\n// You would replace this with the actual API call\n\n// For now, we'll simulate a successful transcription\n$items[0].json.transcription_text = `This is a simulated transcript for file: ${$json.body.fileName}`;
+$items[0].json.status = 'completed';\n\n// Simulate a 10-second processing time\nawait new Promise(resolve => setTimeout(resolve, 10000));\n\nreturn $items;"
+      },
+      "name": "Transcribe Audio (Placeholder)",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        680,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.body.userId ? `${process.env.NEXT_PUBLIC_API_URL}/api/transcribe` : null }}",
+        "method": "PUT",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "transcriptionId",
+              "value": "={{$json.body.uploadId}}"
+            },
+            {
+              "name": "transcription",
+              "value": "={{$json.transcription_text}}"
+            },
+            {
+              "name": "status",
+              "value": "={{$json.status}}"
+            },
+            {
+              "name": "audioUrl",
+              "value": "={{$json.body.fileReference ? $json.body.fileReference.path : null}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Update App DB",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [
+        900,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Get Audio File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Audio File": {
+      "main": [
+        [
+          {
+            "node": "Transcribe Audio (Placeholder)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transcribe Audio (Placeholder)": {
+      "main": [
+        [
+          {
+            "node": "Update App DB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

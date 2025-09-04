@@ -1,0 +1,238 @@
+{
+  "name": "Medical Transcription Complete Workflow (Sanitized)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "medical-transcribe",
+        "responseMode": "onReceived",
+        "responseData": "allEntries",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Extract webhook data and normalize\nconst items = $input.all();\nconst webhookData = items[0].json || {};\n\n// Accept either 'audioFile' or 'audio' as base64 content\nlet base64 = webhookData.audioFile || webhookData.audio || null;\nlet audioBuffer = Buffer.alloc(0);\nif (base64) {\n  try {\n    audioBuffer = Buffer.from(base64, 'base64');\n  } catch (_) {\n    audioBuffer = Buffer.alloc(0);\n  }\n}\n\nreturn [{\n  json: {\n    uploadId: webhookData.uploadId || webhookData.id,\n    fileName: webhookData.fileName || 'audio.mp3',\n    fileSize: webhookData.fileSize || (audioBuffer ? audioBuffer.length : 0),\n    fileType: webhookData.fileType || 'audio/mpeg',\n    doctorName: webhookData.doctorName || '',\n    patientName: webhookData.patientName || '',\n    documentType: webhookData.documentType || 'surgery_report',\n    userId: webhookData.userId || null,\n    uploadTime: webhookData.uploadTime || new Date().toISOString(),\n    source: webhookData.source || 'dashboard-next'\n  },\n  binary: (audioBuffer && audioBuffer.length) ? {\n    audio: { data: audioBuffer, mimeType: webhookData.fileType || 'audio/mpeg', fileName: webhookData.fileName || 'audio.mp3' }\n  } : {}\n}];"
+      },
+      "id": "process-audio",
+      "name": "Process Audio Data",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "resource": "audio",
+        "operation": "transcribe",
+        "model": "whisper-1",
+        "binaryPropertyName": "audio",
+        "options": { "responseFormat": "verbose_json", "language": "en", "temperature": 0 }
+      },
+      "id": "openai-transcribe",
+      "name": "OpenAI Transcribe Audio",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1,
+      "position": [650, 300],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "schema": "public",
+        "table": "document_templates",
+        "returnAll": false,
+        "limit": 1,
+        "filterType": "manual",
+        "filters": {
+          "conditions": [
+            { "field": "document_type", "condition": "equals", "value": "={{ $('process-audio').item.json.documentType }}" },
+            { "field": "is_active", "condition": "equals", "value": true }
+          ]
+        }
+      },
+      "id": "get-template",
+      "name": "Get Document Template",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [850, 300],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "resource": "chat",
+        "operation": "message",
+        "model": "gpt-4-turbo-preview",
+        "messages": { "values": [ { "content": "You are a medical transcription formatter. Format the following transcription according to the template provided.\n\nTranscription:\n{{ $('openai-transcribe').item.json.text }}\n\nTemplate:\n{{ $('get-template').item.json.template_content }}\n\nPatient Name: {{ $('process-audio').item.json.patientName }}\nDoctor Name: {{ $('process-audio').item.json.doctorName }}\nDocument Type: {{ $('process-audio').item.json.documentType }}\n\nApply the template formatting rules and structure. Include all required sections from the template." } ] },
+        "options": { "temperature": 0.3, "maxTokens": 4000 }
+      },
+      "id": "format-transcription",
+      "name": "Format Transcription",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1,
+      "position": [1050, 300],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "functionCode": "const transcriptionData = $('openai-transcribe').item.json || {};\nconst templateData = $('get-template').item.json || {};\nconst formattedData = $('format-transcription').item.json || {};\nconst metadata = $('process-audio').item.json || {};\n\nlet transcriptionText = transcriptionData.text || '';\nlet segments = transcriptionData.segments || [];\nlet language = transcriptionData.language || 'en';\nlet duration = transcriptionData.duration || 0;\n\nlet formattedText = '';\nif (formattedData && formattedData.message && formattedData.message.content) {\n  formattedText = formattedData.message.content;\n} else if (formattedData && formattedData.choices && formattedData.choices[0]) {\n  formattedText = formattedData.choices[0].message.content;\n}\n\nreturn [{ json: {\n  id: metadata.uploadId,\n  user_id: metadata.userId,\n  transcription_text: transcriptionText,\n  formatted_text: formattedText,\n  status: 'completed',\n  completed_at: new Date().toISOString(),\n  updated_at: new Date().toISOString(),\n  segments: segments.length ? JSON.stringify(segments) : null,\n  language,\n  duration,\n  is_formatted: !!formattedText,\n  metadata: JSON.stringify({\n    doctor_name: metadata.doctorName,\n    patient_name: metadata.patientName,\n    document_type: metadata.documentType,\n    template_id: templateData ? templateData.id : null,\n    template_name: templateData ? templateData.template_name : null,\n    file_name: metadata.fileName,\n    file_size: metadata.fileSize,\n    processed_by: 'n8n-medical-workflow',\n    model_used: 'whisper-1',\n    formatting_model: formattedText ? 'gpt-4-turbo-preview' : null\n  }),\n  formatting_model: formattedText ? 'gpt-4-turbo-preview' : null,\n  confidence_score: transcriptionData.confidence || null\n}}];"
+      },
+      "id": "prepare-update",
+      "name": "Prepare Update Data",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1250, 300]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "schema": "public",
+        "table": "transcriptions",
+        "updateKey": "id",
+        "columns": "id,user_id,transcription_text,formatted_text,status,completed_at,updated_at,segments,language,duration,is_formatted,metadata,formatting_model,confidence_score",
+        "returnFields": "id,status,transcription_text,formatted_text,completed_at"
+      },
+      "id": "update-transcription",
+      "name": "Update Transcription",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1450, 300],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "values": {
+          "boolean": [ { "name": "success", "value": true } ],
+          "string": [
+            { "name": "message", "value": "Transcription completed successfully" },
+            { "name": "transcriptionId", "value": "={{ $('update-transcription').item.json.id }}" },
+            { "name": "status", "value": "={{ $('update-transcription').item.json.status }}" }
+          ],
+          "number": [ { "name": "transcriptionLength", "value": "={{ $('update-transcription').item.json.transcription_text ? $('update-transcription').item.json.transcription_text.length : 0 }}" } ]
+        },
+        "options": {}
+      },
+      "id": "success-response",
+      "name": "Success Response",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [1650, 300]
+    },
+    {
+      "parameters": { "respondWith": "allIncomingItems" },
+      "id": "webhook-response",
+      "name": "Webhook Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1850, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "const error = $input.item.error || {};\nconst metadata = $('process-audio').item.json || {};\nlet errorMessage = error.message || 'Processing failed';\nlet errorDetails = {};\nif (error.node === 'openai-transcribe') { errorDetails = { type: 'transcription_error', stage: 'transcription' }; }\nelse if (error.node === 'get-template') { errorDetails = { type: 'template_error', stage: 'template_fetch' }; }\nelse if (error.node === 'format-transcription') { errorDetails = { type: 'formatting_error', stage: 'formatting' }; }\nelse { errorDetails = { type: 'unknown_error', stage: 'unknown' }; }\nreturn [{ json: { id: metadata.uploadId, status: 'failed', error: errorMessage, updated_at: new Date().toISOString(), metadata: JSON.stringify({ ...errorDetails, original_metadata: { doctor_name: metadata.doctorName, patient_name: metadata.patientName, document_type: metadata.documentType, file_name: metadata.fileName } }) } }];"
+      },
+      "id": "handle-error",
+      "name": "Handle Error",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [850, 500]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "schema": "public",
+        "table": "transcriptions",
+        "updateKey": "id",
+        "columns": "id,status,error,updated_at,metadata",
+        "returnFields": "id,status,error"
+      },
+      "id": "update-error-status",
+      "name": "Update Error Status",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1050, 500]
+    },
+    {
+      "parameters": {
+        "values": {
+          "boolean": [ { "name": "success", "value": false } ],
+          "string": [
+            { "name": "message", "value": "={{ $('handle-error').item.json.error }}" },
+            { "name": "transcriptionId", "value": "={{ $('handle-error').item.json.id }}" },
+            { "name": "status", "value": "failed" },
+            { "name": "error", "value": "={{ $('handle-error').item.json.error }}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "error-response",
+      "name": "Error Response",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [1250, 500]
+    },
+    {
+      "parameters": {
+        "functionCode": "const metadata = $('process-audio').item.json || {};\nreturn [{ json: { id: metadata.uploadId, user_id: metadata.userId, audio_url: metadata.fileName, status: 'processing', created_at: new Date().toISOString(), updated_at: new Date().toISOString(), metadata: JSON.stringify({ doctor_name: metadata.doctorName, patient_name: metadata.patientName, document_type: metadata.documentType, file_name: metadata.fileName, file_size: metadata.fileSize, source: metadata.source }) } }];"
+      },
+      "id": "prepare-initial-record",
+      "name": "Prepare Initial Record",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [450, 150]
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "schema": "public",
+        "table": "transcriptions",
+        "columns": "id,user_id,audio_url,status,created_at,updated_at,metadata",
+        "returnFields": "id,status,created_at"
+      },
+      "id": "create-transcription-record",
+      "name": "Create Transcription Record",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [650, 150],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "operation": "upload",
+        "bucketName": "audio-files",
+        "fileName": "={{ $('process-audio').item.json.userId }}/{{ $('process-audio').item.json.uploadId }}/{{ $('process-audio').item.json.fileName }}",
+        "binaryPropertyName": "audio",
+        "options": { "upsert": true }
+      },
+      "id": "upload-audio-storage",
+      "name": "Upload Audio to Storage",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [850, 150],
+      "continueOnFail": true
+    }
+  ],
+  "connections": {
+    "webhook-trigger": { "main": [ [ { "node": "process-audio", "type": "main", "index": 0 } ] ] },
+    "process-audio": { "main": [ [ { "node": "prepare-initial-record", "type": "main", "index": 0 }, { "node": "openai-transcribe", "type": "main", "index": 0 } ] ] },
+    "prepare-initial-record": { "main": [ [ { "node": "create-transcription-record", "type": "main", "index": 0 } ] ] },
+    "create-transcription-record": { "main": [ [ { "node": "upload-audio-storage", "type": "main", "index": 0 } ] ] },
+    "openai-transcribe": { "main": [ [ { "node": "get-template", "type": "main", "index": 0 } ], [ { "node": "handle-error", "type": "main", "index": 0 } ] ] },
+    "get-template": { "main": [ [ { "node": "format-transcription", "type": "main", "index": 0 } ], [ { "node": "prepare-update", "type": "main", "index": 0 } ] ] },
+    "format-transcription": { "main": [ [ { "node": "prepare-update", "type": "main", "index": 0 } ] ] },
+    "prepare-update": { "main": [ [ { "node": "update-transcription", "type": "main", "index": 0 } ] ] },
+    "update-transcription": { "main": [ [ { "node": "success-response", "type": "main", "index": 0 } ], [ { "node": "handle-error", "type": "main", "index": 0 } ] ] },
+    "success-response": { "main": [ [ { "node": "webhook-response", "type": "main", "index": 0 } ] ] },
+    "handle-error": { "main": [ [ { "node": "update-error-status", "type": "main", "index": 0 } ] ] },
+    "update-error-status": { "main": [ [ { "node": "error-response", "type": "main", "index": 0 } ] ] },
+    "error-response": { "main": [ [ { "node": "webhook-response", "type": "main", "index": 0 } ] ] }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1", "saveManualExecutions": true, "callerPolicy": "workflowsFromSameOwner", "errorWorkflow": "" },
+  "versionId": "2.0.0"
+}
+
+

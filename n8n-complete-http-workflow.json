@@ -1,0 +1,159 @@
+{
+  "name": "Medical Transcription - Complete HTTP",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "medical-transcribe-v2",
+        "responseMode": "onReceived",
+        "responseData": "allEntries",
+        "options": {}
+      },
+      "id": "webhook",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Normalize payload and attach binary audio if provided\nconst data = $input.first().json;\nconst base64 = data.audio || data.audioFile || null;\nlet audioBuffer = null;\nif (base64) {\n  try { audioBuffer = Buffer.from(base64, 'base64'); } catch (_) { audioBuffer = null; }\n}\nreturn [{ json: data, binary: audioBuffer ? { audio: { data: audioBuffer, mimeType: data.fileType || 'audio/mpeg', fileName: data.fileName || 'audio.mp3' } } : {} }];"
+      },
+      "id": "normalize",
+      "name": "Normalize Payload",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/transcriptions",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ id: $json.uploadId, user_id: $json.userId, file_name: $json.fileName, file_size: $json.fileSize, audio_url: $json.audioUrl || null, status: 'processing', created_at: new Date().toISOString(), updated_at: new Date().toISOString(), metadata: { doctor_name: $json.doctorName, patient_name: $json.patientName, document_type: $json.documentType, source: 'n8n-http' } }) }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        }
+      },
+      "id": "sb-create",
+      "name": "Create Transcription (SB)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [650, 180],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/audio/transcriptions",
+        "authentication": "none",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [ { "name": "model", "value": "whisper-1" } ]
+        },
+        "sendBinaryData": true,
+        "binaryPropertyName": "file",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [ { "name": "Authorization", "value": "=Bearer {{ $env.OPENAI_API_KEY || '' }}" } ] },
+        "options": { "timeout": 60000 }
+      },
+      "id": "openai-http",
+      "name": "OpenAI Whisper (HTTP)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [650, 420],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.audioUrl }}",
+        "download": true,
+        "responseFormat": "file",
+        "binaryPropertyName": "file",
+        "options": { "timeout": 60000 }
+      },
+      "id": "download",
+      "name": "Download Audio",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [550, 360],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "functionCode": "// Copy binary 'audio' to a 'file' property for OpenAI multipart field\nconst item = $input.first();\nconst out = { json: item.json, binary: item.binary ? { ...item.binary } : {} };\nif (item.binary && item.binary.audio) {\n  out.binary.file = item.binary.audio;\n}\nreturn [out];"
+      },
+      "id": "map-binary",
+      "name": "Map Binary To file",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [550, 420]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Build transcription text and preserve original payload for downstream steps\nconst inItem = $input.first();\n// Access original payload from the Normalize Payload node\nconst original = $node['Normalize Payload'].json || {};\nlet text = '';\ntry {\n  if (inItem && inItem.json && inItem.json.text) {\n    text = inItem.json.text;\n  }\n} catch (_) {}\nif (!text) {\n  text = 'Transcription pending: audio received, external STT not configured.';\n}\n// Merge transcription text into original so uploadId, fileName, etc. are available\nreturn [{ json: { ...original, transcription_text: text } }];"
+      },
+      "id": "fallback",
+      "name": "Prepare Transcription",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [850, 420]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/transcriptions?id=eq.{{ $json.uploadId }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ transcription_text: $json.transcription_text || $item(\n0, 'Prepare Transcription'\n).$json.transcription_text, status: 'completed', updated_at: new Date().toISOString(), metadata: { processed_at: new Date().toISOString(), workflow: 'n8n-complete-http' } }) }}",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [ { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" }, { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" }, { "name": "Content-Type", "value": "application/json" } ] }
+      },
+      "id": "sb-update",
+      "name": "Update Transcription (SB)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.callbackUrl || ($env.NEXT_PUBLIC_URL || 'http://host.docker.internal:3000') + '/api/transcription-result-v2' }}",
+        "method": "POST",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ uploadId: $json.uploadId, success: true, transcription: $item(0,'Prepare Transcription').$json.transcription_text, fileName: $json.fileName, doctorName: $json.doctorName, patientName: $json.patientName, documentType: $json.documentType, audioUrl: $json.audioUrl || null }) }}",
+        "options": { "timeout": 30000 },
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [ { "name": "Content-Type", "value": "application/json" } ] }
+      },
+      "id": "callback",
+      "name": "Notify Website",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1250, 300],
+      "continueOnFail": true
+    }
+  ],
+  "connections": {
+    "Webhook": { "main": [ [ { "node": "Normalize Payload", "type": "main", "index": 0 } ] ] },
+    "Normalize Payload": { "main": [ [ { "node": "Create Transcription (SB)", "type": "main", "index": 0 }, { "node": "Download Audio", "type": "main", "index": 0 }, { "node": "Map Binary To file", "type": "main", "index": 0 } ] ] },
+    "Download Audio": { "main": [ [ { "node": "Map Binary To file", "type": "main", "index": 0 } ] ] },
+    "Map Binary To file": { "main": [ [ { "node": "OpenAI Whisper (HTTP)", "type": "main", "index": 0 } ] ] },
+    "OpenAI Whisper (HTTP)": { "main": [ [ { "node": "Prepare Transcription", "type": "main", "index": 0 } ] ] },
+    "Prepare Transcription": { "main": [ [ { "node": "Update Transcription (SB)", "type": "main", "index": 0 } ] ] },
+    "Update Transcription (SB)": { "main": [ [ { "node": "Notify Website", "type": "main", "index": 0 } ] ] }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1", "saveDataSuccessExecution": "all", "saveExecutionProgress": true },
+  "versionId": "1.0.0"
+}
+
+

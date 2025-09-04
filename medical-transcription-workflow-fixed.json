@@ -1,0 +1,295 @@
+{
+  "name": "Medical Transcription Workflow v7 - Fixed",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "medical-transcribe-v2",
+        "responseMode": "responseNode",
+        "responseData": "allEntries",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [250, 300],
+      "webhookId": "medical-transcribe-v2"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract and validate incoming data\nconst items = $input.all();\nconst data = items[0].json;\n\nconsole.log('Webhook received data:', JSON.stringify(data));\n\n// Ensure we have required fields\nconst payload = {\n  id: data.id || data.uploadId,\n  audio: data.audio || '',\n  format: data.format || 'webm',\n  fileName: data.fileName || 'unknown.audio',\n  doctorName: data.doctorName || '',\n  patientName: data.patientName || '',\n  documentType: data.documentType || 'consultation',\n  additionalNotes: data.additionalNotes || '',\n  audioUrl: data.audioUrl || '',\n  fileSize: data.fileSize || 0,\n  userId: data.userId || '',\n  callbackUrl: data.callbackUrl || 'http://localhost:3000/api/transcription-result-v2',\n  language: data.language || 'en'\n};\n\nreturn [payload];"
+      },
+      "id": "process-webhook-data",
+      "name": "Process Webhook Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "modelId": "gemini-2.0-flash-exp",
+        "prompt": "=You are a professional medical transcriptionist. Transcribe the following audio content accurately and format it as a {{ $json.documentType }} document.\n\nDoctor: {{ $json.doctorName }}\nPatient: {{ $json.patientName }}\nDocument Type: {{ $json.documentType }}\n\nAudio content to transcribe:\n[The audio has been converted to text via speech-to-text. Please format it professionally according to the document type.]\n\nAdditional Notes: {{ $json.additionalNotes }}\n\nPlease provide a well-formatted medical document with proper sections, medical terminology, and professional structure.",
+        "options": {
+          "temperature": 0.3,
+          "maxOutputTokens": 2000
+        }
+      },
+      "id": "gemini-transcribe",
+      "name": "Gemini Transcription",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1.1,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get the transcription result\nconst items = $input.all();\nconst transcriptionResult = items[0].json;\nconst originalData = $('Process Webhook Data').first().json;\n\n// Extract the transcribed text\nlet transcribedText = '';\nif (transcriptionResult.response) {\n  transcribedText = transcriptionResult.response;\n} else if (transcriptionResult.text) {\n  transcribedText = transcriptionResult.text;\n} else if (transcriptionResult.output) {\n  transcribedText = transcriptionResult.output;\n} else {\n  transcribedText = JSON.stringify(transcriptionResult);\n}\n\n// Format the document based on type\nlet formattedDocument = transcribedText;\n\nif (originalData.documentType === 'consultation') {\n  formattedDocument = `CONSULTATION NOTE\\n\\nDate: ${new Date().toLocaleDateString()}\\nDoctor: ${originalData.doctorName}\\nPatient: ${originalData.patientName}\\n\\n${transcribedText}`;\n} else if (originalData.documentType === 'surgery_report') {\n  formattedDocument = `OPERATIVE REPORT\\n\\nDate: ${new Date().toLocaleDateString()}\\nSurgeon: ${originalData.doctorName}\\nPatient: ${originalData.patientName}\\n\\n${transcribedText}`;\n} else if (originalData.documentType === 'discharge_summary') {\n  formattedDocument = `DISCHARGE SUMMARY\\n\\nDischarge Date: ${new Date().toLocaleDateString()}\\nAttending Physician: ${originalData.doctorName}\\nPatient: ${originalData.patientName}\\n\\n${transcribedText}`;\n}\n\nreturn [{\n  id: originalData.id,\n  transcription_text: formattedDocument,\n  formatted_document: formattedDocument,\n  status: 'completed',\n  doctorName: originalData.doctorName,\n  patientName: originalData.patientName,\n  documentType: originalData.documentType,\n  fileName: originalData.fileName,\n  audioUrl: originalData.audioUrl,\n  userId: originalData.userId,\n  callbackUrl: originalData.callbackUrl\n}];"
+      },
+      "id": "format-document",
+      "name": "Format Document",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://yaznemrwbingjwqutbvb.supabase.co/rest/v1/transcriptions?id=eq.{{ $json.id }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inlhem5lbXJ3YmluZ2p3cXV0YnZiIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1NTQ2MDQzMCwiZXhwIjoyMDcxMDM2NDMwfQ.9Ib029SJ7rGbBI4JMoEKacX4LMOZbzOedDZ9JGtuXas"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inlhem5lbXJ3YmluZ2p3cXV0YnZiIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1NTQ2MDQzMCwiZXhwIjoyMDcxMDM2NDMwfQ.9Ib029SJ7rGbBI4JMoEKacX4LMOZbzOedDZ9JGtuXas"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "transcription_text",
+              "value": "={{ $json.transcription_text }}"
+            },
+            {
+              "name": "formatted_document",
+              "value": "={{ $json.formatted_document }}"
+            },
+            {
+              "name": "status",
+              "value": "completed"
+            },
+            {
+              "name": "updated_at",
+              "value": "={{ new Date().toISOString() }}"
+            },
+            {
+              "name": "doctor_name",
+              "value": "={{ $json.doctorName }}"
+            },
+            {
+              "name": "patient_name",
+              "value": "={{ $json.patientName }}"
+            },
+            {
+              "name": "document_type",
+              "value": "={{ $json.documentType }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "update-supabase",
+      "name": "Update Supabase",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1050, 300],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.callbackUrl }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "id",
+              "value": "={{ $json.id }}"
+            },
+            {
+              "name": "success",
+              "value": "=true"
+            },
+            {
+              "name": "transcription",
+              "value": "={{ $json.transcription_text }}"
+            },
+            {
+              "name": "formatted_document",
+              "value": "={{ $json.formatted_document }}"
+            },
+            {
+              "name": "fileName",
+              "value": "={{ $json.fileName }}"
+            },
+            {
+              "name": "doctorName",
+              "value": "={{ $json.doctorName }}"
+            },
+            {
+              "name": "patientName",
+              "value": "={{ $json.patientName }}"
+            },
+            {
+              "name": "documentType",
+              "value": "={{ $json.documentType }}"
+            },
+            {
+              "name": "status",
+              "value": "completed"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "callback-website",
+      "name": "Callback to Website",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1250, 300],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "status",
+              "value": "success"
+            },
+            {
+              "name": "message",
+              "value": "Transcription completed successfully"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "webhook-response",
+      "name": "Webhook Response",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [1450, 300]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Process Webhook Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Webhook Data": {
+      "main": [
+        [
+          {
+            "node": "Gemini Transcription",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini Transcription": {
+      "main": [
+        [
+          {
+            "node": "Format Document",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Document": {
+      "main": [
+        [
+          {
+            "node": "Update Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Supabase": {
+      "main": [
+        [
+          {
+            "node": "Callback to Website",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Callback to Website": {
+      "main": [
+        [
+          {
+            "node": "Webhook Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataSuccessExecution": "all",
+    "saveExecutionProgress": true,
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": null,
+  "meta": {
+    "templateId": "medical-transcription-v7"
+  },
+  "pinData": {},
+  "versionId": "3.0.0",
+  "triggerCount": 0,
+  "tags": []
+}
