@@ -1,0 +1,7 @@
+{
+  "version": 3,
+  "sources": [],
+  "sections": [
+    {"offset": {"line": 6, "column": 0}, "map": {"version":3,"sources":[],"names":[],"mappings":"","debugId":null}},
+    {"offset": {"line": 66, "column": 0}, "map": {"version":3,"sources":["file:///C:/Users/Omar/Desktop/AI%20website%20Latest/dashboard-next/src/app/api/test-env/route.ts"],"sourcesContent":["import { NextResponse } from 'next/server'\r\n\r\nexport async function GET() {\r\n  const envVars = {\r\n    NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL || 'NOT_SET',\r\n    NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ? 'SET' : 'NOT_SET',\r\n    SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY ? 'SET' : 'NOT_SET',\r\n    NODE_ENV: process.env.NODE_ENV,\r\n    isServer: typeof window === 'undefined'\r\n  }\r\n\r\n  return NextResponse.json({\r\n    message: 'Environment variables check',\r\n    variables: envVars,\r\n    timestamp: new Date().toISOString()\r\n  })\r\n}"],"names":[],"mappings":";;;AAAA;;AAEO,eAAe;IACpB,MAAM,UAAU;QACd,0BAA0B,gFAAwC;QAClE,+BAA+B,uCAA4C,QAAQ;QACnF,2BAA2B,QAAQ,GAAG,CAAC,yBAAyB,GAAG,QAAQ;QAC3E,QAAQ;QACR,UAAU,gBAAkB;IAC9B;IAEA,OAAO,gIAAA,CAAA,eAAY,CAAC,IAAI,CAAC;QACvB,SAAS;QACT,WAAW;QACX,WAAW,IAAI,OAAO,WAAW;IACnC;AACF","debugId":null}}]
+}

@@ -1,0 +1,6 @@
+{
+  "version": 3,
+  "sources": [],
+  "sections": [
+    {"offset": {"line": 5, "column": 0}, "map": {"version":3,"sources":["file:///C:/Users/Omar/Desktop/AI%20website%20Latest/dashboard-next/src/app/dashboard/transcriptionist-workspace/page.tsx"],"sourcesContent":["'use client'\r\n\r\nimport dynamic from 'next/dynamic'\r\n\r\nconst TranscriptionistWorkspace = dynamic(\r\n  () => import('../transcriptionist-workspace'),\r\n  { \r\n    ssr: false,\r\n    loading: () => (\r\n      <div className=\"flex items-center justify-center min-h-[600px]\">\r\n        <div className=\"text-center\">\r\n          <div className=\"animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4\"></div>\r\n          <p className=\"text-muted-foreground\">Loading workspace...</p>\r\n        </div>\r\n      </div>\r\n    )\r\n  }\r\n)\r\n\r\nexport default function TranscriptionistWorkspacePage() {\r\n  return <TranscriptionistWorkspace />\r\n}\r\n"],"names":[],"mappings":";;;;AAEA;;AAFA;;;AAIA,MAAM,4BAA4B,CAAA,GAAA,+JAAA,CAAA,UAAO,AAAD;;;;;;IAGpC,KAAK;IACL,SAAS,kBACP,8OAAC;YAAI,WAAU;sBACb,cAAA,8OAAC;gBAAI,WAAU;;kCACb,8OAAC;wBAAI,WAAU;;;;;;kCACf,8OAAC;wBAAE,WAAU;kCAAwB;;;;;;;;;;;;;;;;;;AAOhC,SAAS;IACtB,qBAAO,8OAAC;;;;;AACV","debugId":null}}]
+}

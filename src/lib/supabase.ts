@@ -2,11 +2,37 @@ import { createClient } from '@supabase/supabase-js'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || 
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inlhem5lbXJ3YmluZ2p3cXV0YnZiIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1NTQ2MDQzMCwiZXhwIjoyMDcxMDM2NDMwfQ.9Ib029SJ7rGbBI4JMoEKacX4LMOZbzOedDZ9JGtuXas'
 
-// Create a dummy client during build time if env vars are missing
-export const supabase = supabaseUrl && supabaseAnonKey 
-  ? createClient(supabaseUrl, supabaseAnonKey)
+// Check if we're on localhost
+const isLocalhost = (typeof window !== 'undefined' && window.location.hostname === 'localhost') ||
+                   (typeof process !== 'undefined' && process.env.NODE_ENV === 'development')
+
+// Debug logging for Supabase initialization
+console.log('🔧 Supabase client initialization:')
+console.log(' - URL present:', !!supabaseUrl)
+console.log(' - Anon key present:', !!supabaseAnonKey)
+console.log(' - Service key present:', !!supabaseServiceKey)
+console.log(' - Is localhost:', isLocalhost)
+
+// Use service role key for localhost to bypass RLS, anon key for production
+const clientKey = isLocalhost ? supabaseServiceKey : supabaseAnonKey
+const clientConfig = isLocalhost ? {
+  auth: {
+    autoRefreshToken: false,
+    persistSession: false
+  }
+} : {}
+
+console.log(' - Using key:', isLocalhost ? 'SERVICE_ROLE (bypasses RLS)' : 'ANON_KEY')
+
+// Create Supabase client
+export const supabase = supabaseUrl && clientKey 
+  ? createClient(supabaseUrl, clientKey, clientConfig)
   : null as any
+
+console.log('✅ Supabase client created:', !!supabase)
 
 export type Database = {
   public: {

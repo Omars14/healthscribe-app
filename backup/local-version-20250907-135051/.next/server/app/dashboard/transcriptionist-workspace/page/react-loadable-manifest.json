@@ -1,0 +1,18 @@
+{
+  "[project]/src/app/dashboard/transcriptionist-workspace.tsx [app-client] (ecmascript, next/dynamic entry)": {
+    "id": "[project]/src/app/dashboard/transcriptionist-workspace.tsx [app-client] (ecmascript, next/dynamic entry)",
+    "files": [
+      "static/chunks/src_80d24fd6._.js",
+      "static/chunks/node_modules_fb29a4b5._.js",
+      "static/chunks/src_app_dashboard_transcriptionist-workspace_tsx_a3b55a3a._.js"
+    ]
+  },
+  "[project]/src/app/dashboard/client-layout.tsx [app-client] (ecmascript, next/dynamic entry)": {
+    "id": "[project]/src/app/dashboard/client-layout.tsx [app-client] (ecmascript, next/dynamic entry)",
+    "files": [
+      "static/chunks/node_modules_4f231fe0._.js",
+      "static/chunks/src_d89b71d9._.js",
+      "static/chunks/src_app_dashboard_client-layout_tsx_047e166e._.js"
+    ]
+  }
+}

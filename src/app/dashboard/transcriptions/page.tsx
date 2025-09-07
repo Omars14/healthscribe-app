@@ -22,7 +22,7 @@ import {
   Send,
   Eye
 } from 'lucide-react'
-import { supabase } from '@/lib/supabase'
+// import { supabase } from '@/lib/supabase' // No longer needed - using API routes
 import { formatFileSize, formatDuration } from '@/lib/transcription-service'
 
 interface Transcription {
@@ -66,46 +66,54 @@ export default function TranscriptionsPage() {
 
   const fetchTranscriptions = async () => {
     try {
-      console.log('Fetching transcriptions from Supabase...')
-      console.log('Current user:', user?.email, 'User ID:', user?.id)
+      console.log('🚀 USING API ROUTE: Fetching transcriptions via server-side API...')
+      console.log('🚀 Current user:', user?.email, 'User ID:', user?.id)
       
       if (!user?.id) {
-        console.log('No authenticated user found')
+        console.log('❌ No authenticated user found')
         setTranscriptions([])
         setLoading(false)
         return
       }
       
-      // Get user-specific transcriptions
-      const { data, error } = await supabase
-        .from('transcriptions')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false })
-
-      console.log('Supabase response:', { 
-        data: data, 
-        dataLength: data?.length,
-        error: error,
-        errorMessage: error?.message 
+      console.log('🚀 Making HTTP request to /api/transcriptions')
+      
+      // Use API route instead of direct Supabase query
+      const response = await fetch('/api/transcriptions', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
       })
       
-      if (error) {
-        console.error('Database error:', error)
+      if (!response.ok) {
+        throw new Error(`API request failed: ${response.status} ${response.statusText}`)
+      }
+      
+      const result = await response.json()
+      console.log('🚀 API Response:', { 
+        success: result.success,
+        count: result.count,
+        hasData: !!result.transcriptions,
+        dataLength: result.transcriptions?.length
+      })
+      
+      if (!result.success) {
+        throw new Error(result.error || 'API request failed')
       }
       
       // Add computed status based on transcription_text
-      const transcriptionsWithStatus = (data || []).map(t => ({
+      const transcriptionsWithStatus = (result.transcriptions || []).map(t => ({
         ...t,
         status: t.transcription_text && t.transcription_text.trim() !== '' 
           ? 'completed' 
           : 'pending'
       }))
       
-      console.log('Processed transcriptions:', transcriptionsWithStatus)
+      console.log('🚀 Processed transcriptions:', transcriptionsWithStatus.length, 'records')
       setTranscriptions(transcriptionsWithStatus)
     } catch (error) {
-      console.error('Error fetching transcriptions:', error)
+      console.error('❌ Error fetching transcriptions via API:', error)
       setTranscriptions([])
     } finally {
       setLoading(false)

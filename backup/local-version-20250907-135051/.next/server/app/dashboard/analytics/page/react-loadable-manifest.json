@@ -1,0 +1,10 @@
+{
+  "[project]/src/app/dashboard/client-layout.tsx [app-client] (ecmascript, next/dynamic entry)": {
+    "id": "[project]/src/app/dashboard/client-layout.tsx [app-client] (ecmascript, next/dynamic entry)",
+    "files": [
+      "static/chunks/node_modules_4f231fe0._.js",
+      "static/chunks/src_d89b71d9._.js",
+      "static/chunks/src_app_dashboard_client-layout_tsx_047e166e._.js"
+    ]
+  }
+}

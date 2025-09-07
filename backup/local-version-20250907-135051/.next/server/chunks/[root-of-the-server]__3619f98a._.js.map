@@ -1,0 +1,7 @@
+{
+  "version": 3,
+  "sources": [],
+  "sections": [
+    {"offset": {"line": 6, "column": 0}, "map": {"version":3,"sources":[],"names":[],"mappings":"","debugId":null}},
+    {"offset": {"line": 66, "column": 0}, "map": {"version":3,"sources":["file:///C:/Users/Omar/Desktop/AI%20website%20Latest/dashboard-next/src/app/api/health/route.ts"],"sourcesContent":["import { NextResponse } from 'next/server'\r\n\r\nexport async function GET() {\r\n  return NextResponse.json({\r\n    status: 'ok',\r\n    timestamp: new Date().toISOString(),\r\n    message: 'Server is healthy'\r\n  })\r\n}\r\n"],"names":[],"mappings":";;;AAAA;;AAEO,eAAe;IACpB,OAAO,gIAAA,CAAA,eAAY,CAAC,IAAI,CAAC;QACvB,QAAQ;QACR,WAAW,IAAI,OAAO,WAAW;QACjC,SAAS;IACX;AACF","debugId":null}}]
+}

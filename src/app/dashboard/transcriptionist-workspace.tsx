@@ -1,6 +1,7 @@
 "use client"
 
 import React, { useState, useEffect, useRef } from 'react'
+import { useAuth } from '@/contexts/AuthContext'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -29,7 +30,7 @@ import {
   Clock,
   XCircle
 } from 'lucide-react'
-import { supabase } from '@/lib/supabase'
+// import { supabase } from '@/lib/supabase' // No longer needed - using API routes
 import { 
   submitTranscriptionWithUpdates,
   validateAudioFile,
@@ -54,6 +55,8 @@ interface Transcription {
 }
 
 export default function TranscriptionistWorkspace() {
+  const { user } = useAuth()
+  
   // State management
   const [transcriptions, setTranscriptions] = useState<Transcription[]>([])
   const [selectedTranscription, setSelectedTranscription] = useState<Transcription | null>(null)
@@ -90,18 +93,20 @@ export default function TranscriptionistWorkspace() {
   const textAreaRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
-    fetchTranscriptions()
+    if (user?.id) {
+      fetchTranscriptions()
+    }
     
     // Set up automatic refresh for processing transcriptions
     const interval = setInterval(() => {
-      if (processingIds.size > 0) {
+      if (processingIds.size > 0 && user?.id) {
         console.log('Auto-refreshing for processing transcriptions...')
         fetchTranscriptions()
       }
     }, 5000) // Check every 5 seconds
     
     return () => clearInterval(interval)
-  }, [processingIds])
+  }, [processingIds, user?.id]) // Re-fetch when user changes
 
   useEffect(() => {
     if (selectedTranscription) {
@@ -172,14 +177,41 @@ export default function TranscriptionistWorkspace() {
         setLoading(true)
       }
       
-      const { data, error } = await supabase
-        .from('transcriptions')
-        .select('*')
-        .order('created_at', { ascending: false })
-
-      if (error) {
-        console.error('Database error:', error)
+      console.log('🚀 WORKSPACE: Using API route for transcriptions...')
+      console.log('🚀 WORKSPACE: Current user:', user?.email, 'User ID:', user?.id)
+      
+      if (!user?.id) {
+        console.log('❌ WORKSPACE: No authenticated user found')
+        setTranscriptions([])
+        setLoading(false)
+        return
       }
+      
+      // Use API route with userId parameter to filter user's transcriptions only
+      const response = await fetch(`/api/workspace-transcriptions?userId=${user.id}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      })
+      
+      if (!response.ok) {
+        throw new Error(`Workspace API request failed: ${response.status} ${response.statusText}`)
+      }
+      
+      const result = await response.json()
+      console.log('🚀 WORKSPACE: API Response:', { 
+        success: result.success,
+        count: result.count,
+        hasData: !!result.transcriptions
+      })
+      
+      if (!result.success) {
+        throw new Error(result.error || 'Workspace API request failed')
+      }
+      
+      const data = result.transcriptions
+      const error = null
       
       // Track which transcriptions are processing
       const newProcessingIds = new Set<string>()
