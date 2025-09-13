@@ -1,66 +1,81 @@
+import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { NextResponse } from 'next/server'
 
-export async function GET() {
-  console.log('🔍 Admin Check: Checking user role for admin access...')
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
+
+export async function GET(request: NextRequest) {
+  console.log('🔍 Admin Role Check: Starting role verification...')
   
   try {
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
-    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || ''
-    
-    if (!supabaseUrl || !supabaseServiceKey) {
-      console.error('❌ Admin Check: Missing environment variables')
-      return NextResponse.json({ 
-        success: false, 
-        error: 'Server configuration error'
-      }, { status: 500 })
+    const authHeader = request.headers.get('authorization')
+    if (!authHeader) {
+      console.log('❌ Admin Role Check: No authorization header')
+      return NextResponse.json(
+        { error: 'No authorization header' },
+        { status: 401 }
+      )
     }
-    
-    const supabase = createClient(supabaseUrl, supabaseServiceKey, {
-      auth: {
-        autoRefreshToken: false,
-        persistSession: false
-      }
-    })
-    
-    // Check the role of the main test user
-    const testUserId = '625d7540-ab35-4fee-8817-6d0b32644869'
-    
-    console.log('🔍 Admin Check: Querying user profile for:', testUserId)
-    
-    const { data, error } = await supabase
+
+    // Create Supabase client with service role for full access
+    const supabase = createClient(supabaseUrl, supabaseServiceKey)
+
+    // Get current user from session
+    const token = authHeader.replace('Bearer ', '')
+    const { data: { user }, error: userError } = await supabase.auth.getUser(token)
+
+    if (userError || !user) {
+      console.log('❌ Admin Role Check: Invalid authentication:', userError?.message)
+      return NextResponse.json(
+        { error: 'Invalid authentication' },
+        { status: 401 }
+      )
+    }
+
+    console.log('✅ Admin Role Check: User authenticated:', user.email, 'ID:', user.id)
+
+    // Get user profile with role
+    const { data: profile, error: profileError } = await supabase
       .from('user_profiles')
-      .select('id, email, role, created_at, updated_at')
-      .eq('id', testUserId)
+      .select('role, email, full_name, is_active')
+      .eq('id', user.id)
       .single()
-    
-    if (error) {
-      console.error('❌ Admin Check: Query error:', error)
-      return NextResponse.json({ 
-        success: false, 
-        error: error.message
-      }, { status: 500 })
+
+    if (profileError) {
+      console.log('❌ Admin Role Check: Profile error:', profileError.message)
+      return NextResponse.json(
+        { error: 'Failed to fetch user profile' },
+        { status: 500 }
+      )
     }
-    
-    console.log('✅ Admin Check: User profile found:', {
-      id: data.id,
-      email: data.email,
-      role: data.role,
-      isAdmin: data.role === 'admin'
+
+    if (!profile) {
+      console.log('❌ Admin Role Check: No profile found for user')
+      return NextResponse.json(
+        { error: 'User profile not found' },
+        { status: 404 }
+      )
+    }
+
+    console.log('✅ Admin Role Check: Profile found:', {
+      email: profile.email,
+      role: profile.role,
+      is_active: profile.is_active
     })
-    
-    return NextResponse.json({ 
-      success: true, 
-      user: data,
-      isAdmin: data.role === 'admin',
-      needsRoleUpdate: data.role !== 'admin'
+
+    return NextResponse.json({
+      role: profile.role,
+      email: profile.email,
+      full_name: profile.full_name,
+      is_active: profile.is_active,
+      user_id: user.id
     })
-    
-  } catch (err: any) {
-    console.error('❌ Admin Check: Unexpected error:', err.message)
-    return NextResponse.json({ 
-      success: false, 
-      error: err.message || 'Internal server error'
-    }, { status: 500 })
+
+  } catch (error) {
+    console.error('❌ Admin Role Check: Unexpected error:', error)
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    )
   }
 }

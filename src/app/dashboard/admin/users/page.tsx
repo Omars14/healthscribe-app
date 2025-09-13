@@ -31,8 +31,10 @@ import {
   BarChart3,
   ArrowUpDown,
   ArrowUp,
-  ArrowDown
+  ArrowDown,
+  FileAudio
 } from 'lucide-react'
+import Link from 'next/link'
 import { formatDistanceToNow } from 'date-fns'
 
 interface User {
@@ -232,10 +234,18 @@ export default function AdminUsersPage() {
                 Manage users, roles, and monitor transcription activity
               </p>
             </div>
-            <Button onClick={() => window.location.reload()} variant="outline">
-              <RefreshCw className="h-4 w-4 mr-2" />
-              Refresh
-            </Button>
+            <div className="flex gap-2">
+              <Link href="/dashboard/admin/transcriptions">
+                <Button variant="outline">
+                  <FileAudio className="h-4 w-4 mr-2" />
+                  All Transcriptions
+                </Button>
+              </Link>
+              <Button onClick={() => window.location.reload()} variant="outline">
+                <RefreshCw className="h-4 w-4 mr-2" />
+                Refresh
+              </Button>
+            </div>
           </div>
         </div>
 

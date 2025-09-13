@@ -31,12 +31,16 @@ export async function uploadDirectToStorage({
     
     console.log('📤 Uploading directly to Supabase Storage:', filePath)
     
-    // Upload directly to Supabase Storage from client
+    // Upload directly to Supabase Storage from client with optimized settings
     const { data, error } = await supabase.storage
       .from(bucketName)
       .upload(filePath, file, {
         cacheControl: '3600',
-        upsert: false
+        upsert: false,
+        // Add progress tracking if supported
+        onUploadProgress: (progress) => {
+          console.log(`📤 Upload progress: ${Math.round(progress.loaded / progress.total * 100)}%`)
+        }
       })
     
     if (error) {

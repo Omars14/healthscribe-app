@@ -32,9 +32,11 @@ export async function GET(request: NextRequest) {
             .single()
           
           if (error) {
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
-              type: 'error', 
-              error: 'Failed to fetch transcription' 
+            console.error('Transcription status fetch error:', error)
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({
+              type: 'error',
+              error: error.message || 'Failed to fetch transcription',
+              details: error.details || 'Database query failed'
             })}\n\n`))
             clearInterval(interval)
             controller.close()
@@ -68,18 +70,20 @@ export async function GET(request: NextRequest) {
           
           retryCount++
           if (retryCount >= maxRetries) {
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({
               type: 'timeout',
-              message: 'Status check timeout' 
+              error: 'Transcription status check timed out',
+              message: 'The transcription service took too long to respond. Please refresh the page to check the status.'
             })}\n\n`))
             clearInterval(interval)
             controller.close()
           }
         } catch (error) {
           console.error('SSE error:', error)
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({
             type: 'error',
-            error: 'Internal error' 
+            error: error instanceof Error ? error.message : 'Internal server error',
+            details: 'An unexpected error occurred while checking transcription status'
           })}\n\n`))
           clearInterval(interval)
           controller.close()

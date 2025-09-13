@@ -43,6 +43,7 @@ export async function GET(request: Request) {
       .select('*')
       .eq('user_id', userId)  // CRITICAL FIX: Filter by user_id
       .order('created_at', { ascending: false })
+      .limit(100) // Limit to prevent large result sets
     
     console.log('🚀 Workspace API: Query result:', { 
       dataLength: data?.length, 
@@ -60,10 +61,15 @@ export async function GET(request: Request) {
     
     console.log('✅ Workspace API: Successfully fetched', data?.length || 0, 'transcriptions')
     
-    return NextResponse.json({ 
-      success: true, 
+    return NextResponse.json({
+      success: true,
       count: data?.length || 0,
       transcriptions: data || []
+    }, {
+      headers: {
+        'Cache-Control': 'private, max-age=30', // Cache for 30 seconds
+        'X-Response-Time': Date.now().toString()
+      }
     })
     
   } catch (err: any) {

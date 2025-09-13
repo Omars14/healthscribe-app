@@ -55,7 +55,7 @@ interface Transcription {
 }
 
 export default function TranscriptionistWorkspace() {
-  const { user } = useAuth()
+  const { user, session } = useAuth()
   
   // State management
   const [transcriptions, setTranscriptions] = useState<Transcription[]>([])
@@ -64,6 +64,7 @@ export default function TranscriptionistWorkspace() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState(0)
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'in_progress' | 'completed'>('all')
   const [deletingId, setDeletingId] = useState<string | null>(null)
@@ -71,7 +72,13 @@ export default function TranscriptionistWorkspace() {
   const [showBulkUpload, setShowBulkUpload] = useState(false)
   const [processingIds, setProcessingIds] = useState<Set<string>>(new Set())
   const [lastRefresh, setLastRefresh] = useState<Date>(new Date())
-  
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
+  const [lastSavedText, setLastSavedText] = useState('')
+  const [isFetching, setIsFetching] = useState(false)
+  const lastFetchTime = useRef<number>(0)
+  const cachedData = useRef<Transcription[] | null>(null)
+  const cacheExpiry = useRef<number>(0)
+
   // Audio player state
   const [isPlaying, setIsPlaying] = useState(false)
   const [currentTime, setCurrentTime] = useState(0)
@@ -94,25 +101,75 @@ export default function TranscriptionistWorkspace() {
 
   useEffect(() => {
     if (user?.id) {
+      console.log('🔄 Initial fetchTranscriptions triggered for user:', user.id)
       fetchTranscriptions()
     }
-    
-    // Set up automatic refresh for processing transcriptions
-    const interval = setInterval(() => {
-      if (processingIds.size > 0 && user?.id) {
-        console.log('Auto-refreshing for processing transcriptions...')
-        fetchTranscriptions()
+  }, [user?.id]) // Only re-fetch when user changes
+
+  // Separate effect for auto-refresh interval - only depends on user
+  useEffect(() => {
+    if (!user?.id) return
+
+    console.log('🔄 Setting up auto-refresh interval for user:', user.id)
+
+    const checkProcessingItems = () => {
+      // Only refresh if we have processing items and aren't currently fetching
+      if (processingIds.size > 0 && !isFetching) {
+        const now = Date.now()
+        const timeSinceLastFetch = now - lastFetchTime.current
+
+        // Only auto-refresh if it's been at least 10 seconds since last fetch
+        if (timeSinceLastFetch >= 10000) {
+          console.log('⏰ Auto-refreshing for processing transcriptions...', processingIds.size, 'items')
+          fetchTranscriptions(false) // Don't show loading state for auto-refresh
+        } else {
+          console.log('⏰ Skipping auto-refresh: too soon since last fetch (', timeSinceLastFetch, 'ms)')
+        }
       }
-    }, 5000) // Check every 5 seconds
-    
-    return () => clearInterval(interval)
-  }, [processingIds, user?.id]) // Re-fetch when user changes
+    }
+
+    // Check immediately when processing items change
+    checkProcessingItems()
+
+    // Set up interval to check every 30 seconds
+    const interval = setInterval(checkProcessingItems, 30000)
+
+    return () => {
+      console.log('🔄 Clearing auto-refresh interval')
+      clearInterval(interval)
+    }
+  }, [user?.id]) // Only depend on user ID to avoid recreating interval
+
+  // Effect to handle immediate refresh when processing items change
+  useEffect(() => {
+    if (processingIds.size > 0 && user?.id && !isFetching) {
+      const now = Date.now()
+      const timeSinceLastFetch = now - lastFetchTime.current
+
+      // Only refresh if it's been at least 5 seconds since last fetch
+      if (timeSinceLastFetch >= 5000) {
+        console.log('🔄 Processing items changed, refreshing...', processingIds.size, 'items')
+        fetchTranscriptions(false)
+      }
+    }
+  }, [processingIds.size, user?.id, isFetching])
 
   useEffect(() => {
     if (selectedTranscription) {
-      setEditingText(selectedTranscription.transcription_text || '')
+      const initialText = selectedTranscription.transcription_text || ''
+      setEditingText(initialText)
+      setLastSavedText(initialText)
+      setHasUnsavedChanges(false)
     }
   }, [selectedTranscription])
+
+  // Track unsaved changes
+  useEffect(() => {
+    if (selectedTranscription) {
+      const hasChanges = editingText !== lastSavedText
+      setHasUnsavedChanges(hasChanges)
+    }
+  }, [editingText, lastSavedText, selectedTranscription])
 
   // Keyboard shortcuts for audio control
   useEffect(() => {
@@ -165,25 +222,69 @@ export default function TranscriptionistWorkspace() {
         setPlaybackRate(newRate)
         audioRef.current.playbackRate = newRate
       }
+
+      // Ctrl+S to save
+      if (e.ctrlKey && e.code === 'KeyS') {
+        e.preventDefault()
+        if (selectedTranscription && !saving) {
+          handleSaveTranscription()
+        }
+      }
     }
 
     window.addEventListener('keydown', handleKeyPress)
     return () => window.removeEventListener('keydown', handleKeyPress)
-  }, [selectedTranscription, isPlaying])
+  }, [selectedTranscription, isPlaying, saving])
 
-  const fetchTranscriptions = async (showLoadingState = true) => {
+  // Warn about unsaved changes before page unload
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (hasUnsavedChanges) {
+        e.preventDefault()
+        e.returnValue = 'You have unsaved changes. Are you sure you want to leave?'
+        return e.returnValue
+      }
+    }
+
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload)
+  }, [hasUnsavedChanges])
+
+  const fetchTranscriptions = async (showLoadingState = true, forceRefresh = false) => {
     try {
+      // Check cache first (unless force refresh)
+      const now = Date.now()
+      if (!forceRefresh && cachedData.current && now < cacheExpiry.current) {
+        console.log('💾 WORKSPACE: Using cached data, expires in:', Math.round((cacheExpiry.current - now) / 1000), 'seconds')
+        setTranscriptions(cachedData.current)
+        if (showLoadingState) setLoading(false)
+        return
+      }
+
+      // Prevent duplicate API calls within 3 seconds
+      const timeSinceLastFetch = now - lastFetchTime.current
+
+      if (isFetching || timeSinceLastFetch < 3000) {
+        console.log('🚫 WORKSPACE: Skipping fetchTranscriptions call - isFetching:', isFetching, 'timeSinceLastFetch:', timeSinceLastFetch)
+        return
+      }
+
+      console.log('🚀 WORKSPACE: fetchTranscriptions called with showLoadingState:', showLoadingState)
+      setIsFetching(true)
+      lastFetchTime.current = now
+
       if (showLoadingState) {
         setLoading(true)
       }
-      
+
       console.log('🚀 WORKSPACE: Using API route for transcriptions...')
       console.log('🚀 WORKSPACE: Current user:', user?.email, 'User ID:', user?.id)
-      
+
       if (!user?.id) {
         console.log('❌ WORKSPACE: No authenticated user found')
         setTranscriptions([])
         setLoading(false)
+        setIsFetching(false)
         return
       }
       
@@ -241,12 +342,23 @@ export default function TranscriptionistWorkspace() {
       })
       
       setTranscriptions(transcriptionsWithStatus)
-      setProcessingIds(newProcessingIds)
+
+      // Update cache
+      cachedData.current = transcriptionsWithStatus
+      cacheExpiry.current = Date.now() + 30000 // Cache for 30 seconds
+
+      // Only update processingIds if the count actually changed
+      if (newProcessingIds.size !== processingIds.size) {
+        console.log('🔄 Processing count changed:', processingIds.size, '→', newProcessingIds.size)
+        setProcessingIds(newProcessingIds)
+      }
+
       setLastRefresh(new Date())
     } catch (error) {
       console.error('Error fetching transcriptions:', error)
     } finally {
       setLoading(false)
+      setIsFetching(false)
     }
   }
 
@@ -294,7 +406,8 @@ export default function TranscriptionistWorkspace() {
     }
     
     setUploading(true)
-    
+    setUploadProgress(0)
+
     // Optimistically add to list with pending status
     const optimisticTranscription: Transcription = {
       id: `temp-${Date.now()}`,
@@ -312,7 +425,7 @@ export default function TranscriptionistWorkspace() {
     setTranscriptions(prev => [optimisticTranscription, ...prev])
     
     try {
-      // Submit with real-time updates
+      // Submit with real-time updates and progress tracking
       const response = await submitTranscriptionWithUpdates(
         {
           audioFile: selectedFile,
@@ -322,7 +435,16 @@ export default function TranscriptionistWorkspace() {
         },
         async (status: TranscriptionStatus) => {
           console.log('Real-time status update:', status)
-          
+
+          // Update progress based on status
+          if (status.status === 'pending') {
+            setUploadProgress(25)
+          } else if (status.status === 'in_progress') {
+            setUploadProgress(75)
+          } else if (status.status === 'completed') {
+            setUploadProgress(100)
+          }
+
           // Update the transcription in the list with real-time status
           setTranscriptions(prev => prev.map(t => {
             if (t.id === optimisticTranscription.id || t.id === status.id) {
@@ -341,15 +463,15 @@ export default function TranscriptionistWorkspace() {
           if (status.status === 'completed' && status.audio_url) {
             const signedUrl = await getSignedAudioUrl(status.audio_url)
             if (signedUrl.url) {
-              setTranscriptions(prev => prev.map(t => 
+              setTranscriptions(prev => prev.map(t =>
                 t.id === status.id ? { ...t, audio_url: signedUrl.url! } : t
               ))
             }
           }
-          
+
           // If completed, refresh to get full data
           if (status.status === 'completed' || status.status === 'failed') {
-            fetchTranscriptions()
+            fetchTranscriptions(false, true) // Force refresh to get latest data
           }
         }
       )
@@ -380,15 +502,15 @@ export default function TranscriptionistWorkspace() {
       console.error('Upload error:', error)
       alert(`Failed to upload: ${error instanceof Error ? error.message : 'Unknown error'}`)
       setUploading(false)
+      setUploadProgress(0)
     }
   }
 
   const handleDelete = async (id: string) => {
     try {
       setDeletingId(id)
-      
-      // Get auth token
-      const { data: { session } } = await supabase.auth.getSession()
+
+      // Get auth token from AuthContext
       if (!session) {
         throw new Error('Not authenticated')
       }
@@ -424,36 +546,57 @@ export default function TranscriptionistWorkspace() {
 
   const handleSaveTranscription = async () => {
     if (!selectedTranscription) return
-    
+
     setSaving(true)
     try {
       const newStatus: 'completed' | 'pending' = (editingText && editingText.trim() !== '') ? 'completed' : 'pending'
 
-      const { error } = await supabase
-        .from('transcriptions')
-        .update({ 
-          transcription_text: editingText,
-          status: newStatus,
-        })
-        .eq('id', selectedTranscription.id)
+      console.log('💾 Saving transcription:', selectedTranscription.id)
 
-      if (error) throw error
-      
-      // Update local state with computed status
-      setTranscriptions(prev => 
-        prev.map(t => t.id === selectedTranscription.id 
-          ? { ...t, transcription_text: editingText, status: newStatus as 'completed' | 'pending' }
+      const response = await fetch(`/api/transcriptions/${selectedTranscription.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          transcription_text: editingText,
+        }),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || `HTTP ${response.status}`)
+      }
+
+      const result = await response.json()
+
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to save transcription')
+      }
+
+      console.log('✅ Transcription saved successfully')
+
+      // Update local state with the response data
+      const updatedTranscription = result.transcription
+      setTranscriptions(prev =>
+        prev.map(t => t.id === selectedTranscription.id
+          ? { ...t, ...updatedTranscription, status: updatedTranscription.status as 'completed' | 'pending' }
           : t
         )
       )
-      setSelectedTranscription(prev => 
-        prev ? { ...prev, transcription_text: editingText, status: newStatus as 'completed' | 'pending' } : null
+      setSelectedTranscription(prev =>
+        prev ? { ...prev, ...updatedTranscription, status: updatedTranscription.status as 'completed' | 'pending' } : null
       )
-      
-      alert('Transcription saved successfully!')
+
+      // Update tracking state
+      setLastSavedText(editingText)
+      setHasUnsavedChanges(false)
+
+      // Show success feedback (using a more modern approach)
+      console.log('✅ Transcription saved successfully!')
     } catch (error) {
       console.error('Error saving transcription:', error)
-      alert('Failed to save transcription')
+      alert(`Failed to save transcription: ${error instanceof Error ? error.message : 'Unknown error'}`)
     } finally {
       setSaving(false)
     }
@@ -544,7 +687,7 @@ export default function TranscriptionistWorkspace() {
                 <span>{processingIds.size} processing...</span>
               </div>
             )}
-            <Button variant="outline" onClick={() => fetchTranscriptions(false)}>
+            <Button variant="outline" onClick={() => fetchTranscriptions(false, true)}>
               <RefreshCw className="h-4 w-4 mr-2" />
               Refresh
             </Button>
@@ -628,23 +771,40 @@ export default function TranscriptionistWorkspace() {
                 </div>
                 
                 {selectedFile && (
-                  <Button 
-                    className="w-full" 
-                    onClick={handleUpload}
-                    disabled={uploading}
-                  >
-                    {uploading ? (
-                      <>
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                        Uploading...
-                      </>
-                    ) : (
-                      <>
-                        <Zap className="h-4 w-4 mr-2" />
-                        Process with AI
-                      </>
+                  <div className="space-y-2">
+                    <Button
+                      className="w-full"
+                      onClick={handleUpload}
+                      disabled={uploading}
+                    >
+                      {uploading ? (
+                        <>
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          {uploadProgress > 0 ? `Processing... ${uploadProgress}%` : 'Uploading...'}
+                        </>
+                      ) : (
+                        <>
+                          <Zap className="h-4 w-4 mr-2" />
+                          Process with AI
+                        </>
+                      )}
+                    </Button>
+
+                    {uploading && uploadProgress > 0 && (
+                      <div className="space-y-1">
+                        <div className="flex justify-between text-xs text-muted-foreground">
+                          <span>Progress</span>
+                          <span>{uploadProgress}%</span>
+                        </div>
+                        <div className="w-full bg-secondary rounded-full h-2">
+                          <div
+                            className="bg-primary h-2 rounded-full transition-all duration-300"
+                            style={{ width: `${uploadProgress}%` }}
+                          />
+                        </div>
+                      </div>
                     )}
-                  </Button>
+                  </div>
                 )}
               </CardContent>
             </Card>
@@ -899,7 +1059,15 @@ export default function TranscriptionistWorkspace() {
                 <Card className="flex-1">
                   <CardHeader className="pb-3">
                     <div className="flex items-center justify-between">
-                      <CardTitle className="text-lg">Transcription Editor</CardTitle>
+                      <div className="flex items-center gap-2">
+                        <CardTitle className="text-lg">Transcription Editor</CardTitle>
+                        {hasUnsavedChanges && (
+                          <span className="text-sm text-amber-600 bg-amber-50 px-2 py-1 rounded-md flex items-center gap-1">
+                            <AlertTriangle className="h-3 w-3" />
+                            Unsaved changes
+                          </span>
+                        )}
+                      </div>
                       <div className="flex gap-2">
                         <Button
                           variant="outline"
@@ -911,7 +1079,8 @@ export default function TranscriptionistWorkspace() {
                         <Button
                           size="sm"
                           onClick={handleSaveTranscription}
-                          disabled={saving}
+                          disabled={saving || !hasUnsavedChanges}
+                          className={hasUnsavedChanges ? "bg-primary hover:bg-primary/90" : ""}
                         >
                           {saving ? (
                             <>
@@ -921,7 +1090,7 @@ export default function TranscriptionistWorkspace() {
                           ) : (
                             <>
                               <Save className="h-4 w-4 mr-1" />
-                              Save
+                              Save {hasUnsavedChanges ? "(Ctrl+S)" : ""}
                             </>
                           )}
                         </Button>
@@ -964,7 +1133,7 @@ export default function TranscriptionistWorkspace() {
         onClose={() => setShowBulkUpload(false)}
         onComplete={() => {
           setShowBulkUpload(false)
-          fetchTranscriptions()
+          fetchTranscriptions(false, true) // Force refresh after bulk upload
         }}
       />
     </div>

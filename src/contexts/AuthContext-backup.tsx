@@ -40,14 +40,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (error) {
         // If profile doesn't exist, create one
         if (error.code === 'PGRST116') {
-          // Use the current user from state instead of making another API call
-          if (user) {
+          const { data: userData } = await supabase.auth.getUser()
+          if (userData?.user) {
             const { data: newProfile, error: createError } = await supabase
               .from('user_profiles')
               .insert({
                 id: userId,
-                email: user.email!,
-                full_name: user.user_metadata?.name || null,
+                email: userData.user.email!,
+                full_name: userData.user.user_metadata?.name || null,
                 role: 'transcriptionist'
               })
               .select()
@@ -81,7 +81,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
-      console.log('🔐 Auth state change:', _event, 'User ID:', session?.user?.id)
       setSession(session)
       setUser(session?.user ?? null)
       if (session?.user) {
