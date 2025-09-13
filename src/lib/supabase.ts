@@ -16,16 +16,17 @@ console.log(' - Anon key present:', !!supabaseAnonKey)
 console.log(' - Service key present:', !!supabaseServiceKey)
 console.log(' - Is localhost:', isLocalhost)
 
-// Use service role key for localhost to bypass RLS, anon key for production
-const clientKey = isLocalhost ? supabaseServiceKey : supabaseAnonKey
-const clientConfig = isLocalhost ? {
+// Always use anon key for client-side auth, service role only for server-side
+const clientKey = supabaseAnonKey
+const clientConfig = {
   auth: {
-    autoRefreshToken: false,
-    persistSession: false
+    autoRefreshToken: true,
+    persistSession: true,
+    detectSessionInUrl: true
   }
-} : {}
+}
 
-console.log(' - Using key:', isLocalhost ? 'SERVICE_ROLE (bypasses RLS)' : 'ANON_KEY')
+console.log(' - Using key:', 'ANON_KEY (for client-side auth)')
 
 // Create Supabase client
 export const supabase = supabaseUrl && clientKey 

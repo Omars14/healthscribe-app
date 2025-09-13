@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase-client'
+import { useAuth } from '@/contexts/AuthContext'
 import TranscriptionPlayer from '@/components/TranscriptionPlayer'
 import { BulkUploadModal } from '@/components/bulk-upload-modal'
 import { Loader2, Search, Filter, RefreshCw, Trash2, AlertTriangle, Upload } from 'lucide-react'
@@ -21,6 +22,7 @@ interface TranscriptionData {
 }
 
 export default function TranscriptionsPage() {
+  const { session } = useAuth()
   const [transcriptions, setTranscriptions] = useState<TranscriptionData[]>([])
   const [selectedTranscription, setSelectedTranscription] = useState<TranscriptionData | null>(null)
   const [loading, setLoading] = useState(true)
@@ -66,7 +68,7 @@ export default function TranscriptionsPage() {
   useEffect(() => {
     fetchTranscriptions()
     
-    // Set up real-time subscription
+    // Set up real-time subscription (only once, not dependent on selectedTranscription)
     const subscription = supabase
       .channel('transcriptions_changes')
       .on('postgres_changes', 
@@ -84,15 +86,15 @@ export default function TranscriptionsPage() {
             setTranscriptions(prev => 
               prev.map(t => t.id === payload.new.id ? payload.new as TranscriptionData : t)
             )
-            // Update selected transcription if it's the one being updated
-            if (selectedTranscription?.id === payload.new.id) {
-              setSelectedTranscription(payload.new as TranscriptionData)
-            }
+            // Update selected transcription if it's the one being updated (using current state)
+            setSelectedTranscription(current => 
+              current?.id === payload.new.id ? payload.new as TranscriptionData : current
+            )
           } else if (payload.eventType === 'DELETE') {
             setTranscriptions(prev => prev.filter(t => t.id !== payload.old.id))
-            if (selectedTranscription?.id === payload.old.id) {
-              setSelectedTranscription(null)
-            }
+            setSelectedTranscription(current => 
+              current?.id === payload.old.id ? null : current
+            )
           }
         }
       )
@@ -101,7 +103,7 @@ export default function TranscriptionsPage() {
     return () => {
       subscription.unsubscribe()
     }
-  }, [selectedTranscription?.id])
+  }, []) // No dependencies - subscription should only be set up once
 
   const handleRefresh = async () => {
     setRefreshing(true)
@@ -129,9 +131,8 @@ export default function TranscriptionsPage() {
   const handleDelete = async (id: string) => {
     try {
       setDeletingId(id)
-      
-      // Get auth token
-      const { data: { session } } = await supabase.auth.getSession()
+
+      // Get auth token from AuthContext
       if (!session) {
         throw new Error('Not authenticated')
       }

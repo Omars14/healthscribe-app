@@ -59,26 +59,53 @@ export default function ClientDashboardLayout({
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [mounted, setMounted] = useState(false)
+  const [forceRender, setForceRender] = useState(false)
   const pathname = usePathname()
   const router = useRouter()
   const { user, userProfile, loading, signOut } = useAuth()
 
   useEffect(() => {
     setMounted(true)
+    
+    // Emergency timeout - if loading takes too long, force render
+    const timeout = setTimeout(() => {
+      console.log('🚨 Dashboard Layout: Auth loading timeout - forcing render')
+      setForceRender(true)
+    }, 3000) // 3 second timeout
+
+    return () => clearTimeout(timeout)
   }, [])
 
   useEffect(() => {
-    if (!loading && !user) {
+    console.log('🔧 Dashboard Layout: Auth state:', { loading, user: !!user, userProfile: !!userProfile })
+
+    if (!loading && !user && !forceRender) {
+      console.log('🔧 Dashboard Layout: No user found, redirecting to login')
       router.push('/login')
     }
-  }, [user, loading, router])
+  }, [user, loading, forceRender]) // Remove router from dependencies
 
-  if (!mounted || loading) {
+  // Enhanced loading condition with debug info and timeout
+  if ((!mounted || loading) && !forceRender) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
           <p className="text-muted-foreground">Loading dashboard...</p>
+          {process.env.NODE_ENV === 'development' && (
+            <div className="mt-4 text-xs text-gray-500">
+              <p>Mounted: {mounted ? 'Yes' : 'No'}</p>
+              <p>Auth Loading: {loading ? 'Yes' : 'No'}</p>
+              <p>User: {user ? user.email : 'None'}</p>
+              <p>Force Render: {forceRender ? 'Yes' : 'No'}</p>
+            </div>
+          )}
+          <button
+            onClick={() => setForceRender(true)}
+            className="mt-4 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+          >
+            Force Load Dashboard
+          </button>
         </div>
       </div>
     )

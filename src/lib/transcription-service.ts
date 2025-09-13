@@ -257,14 +257,17 @@ export function subscribeToTranscriptionStatus(
   eventSource.onmessage = (event) => {
     try {
       const data = JSON.parse(event.data)
-      
+
       if (data.type === 'status') {
         onUpdate(data.data)
       } else if (data.type === 'complete') {
         if (onComplete) onComplete()
         eventSource.close()
       } else if (data.type === 'error' || data.type === 'timeout') {
-        if (onError) onError(data)
+        if (onError) {
+          const errorObj = data.error ? new Error(data.error) : new Error(data.message || 'Transcription failed')
+          onError(errorObj)
+        }
         eventSource.close()
       }
     } catch (error) {
@@ -275,7 +278,11 @@ export function subscribeToTranscriptionStatus(
   
   eventSource.onerror = (error) => {
     console.error('SSE connection error:', error)
-    if (onError) onError(error)
+    if (onError) {
+      // Create a more meaningful error message for SSE connection issues
+      const connectionError = new Error('Lost connection to transcription service. Please refresh the page.')
+      onError(connectionError)
+    }
     eventSource.close()
   }
   

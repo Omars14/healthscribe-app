@@ -5,7 +5,7 @@ import { v4 as uuidv4 } from 'uuid'
 
 // Configure runtime for large file uploads
 export const runtime = 'nodejs'
-export const maxDuration = 60 // 60 seconds timeout
+export const maxDuration = 300 // 5 minutes timeout for large uploads
 
 export async function POST(request: NextRequest) {
   try {
