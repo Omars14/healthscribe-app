@@ -67,10 +67,10 @@ export default function Home() {
             </div>
             
             <div className="hidden lg:flex items-center space-x-8">
-              <a href="#features" className="text-white/80 hover:text-white transition-colors font-medium">Features</a>
-              <a href="#solutions" className="text-white/80 hover:text-white transition-colors font-medium">Solutions</a>
-              <a href="#testimonials" className="text-white/80 hover:text-white transition-colors font-medium">Reviews</a>
-              <a href="#pricing" className="text-white/80 hover:text-white transition-colors font-medium">Pricing</a>
+              <Link href="/services" className="text-white/80 hover:text-white transition-colors font-medium">Services</Link>
+              <Link href="/about" className="text-white/80 hover:text-white transition-colors font-medium">About</Link>
+              <Link href="/pricing" className="text-white/80 hover:text-white transition-colors font-medium">Pricing</Link>
+              <Link href="/contact" className="text-white/80 hover:text-white transition-colors font-medium">Contact</Link>
             </div>
             
             <div className="flex items-center gap-3">
@@ -454,30 +454,30 @@ export default function Home() {
             <div>
               <h3 className="text-white font-semibold mb-4">Product</h3>
               <ul className="space-y-2 text-blue-200/70">
-                <li><a href="#features" className="hover:text-white transition-colors">Features</a></li>
-                <li><a href="#pricing" className="hover:text-white transition-colors">Pricing</a></li>
-                <li><a href="/dashboard" className="hover:text-white transition-colors">Dashboard</a></li>
-                <li><a href="#" className="hover:text-white transition-colors">Mobile App</a></li>
+                <li><Link href="/services" className="hover:text-white transition-colors">Services</Link></li>
+                <li><Link href="/pricing" className="hover:text-white transition-colors">Pricing</Link></li>
+                <li><Link href="/dashboard" className="hover:text-white transition-colors">Dashboard</Link></li>
+                <li><a href="#" className="hover:text-white transition-colors">API</a></li>
               </ul>
             </div>
-            
+
             <div>
               <h3 className="text-white font-semibold mb-4">Company</h3>
               <ul className="space-y-2 text-blue-200/70">
-                <li><a href="#" className="hover:text-white transition-colors">About Us</a></li>
+                <li><Link href="/about" className="hover:text-white transition-colors">About Us</Link></li>
                 <li><a href="#" className="hover:text-white transition-colors">Careers</a></li>
                 <li><a href="#" className="hover:text-white transition-colors">Press</a></li>
                 <li><a href="#" className="hover:text-white transition-colors">Blog</a></li>
               </ul>
             </div>
-            
+
             <div>
               <h3 className="text-white font-semibold mb-4">Support</h3>
               <ul className="space-y-2 text-blue-200/70">
                 <li><a href="#" className="hover:text-white transition-colors">Help Center</a></li>
-                <li><a href="#" className="hover:text-white transition-colors">Privacy Policy</a></li>
-                <li><a href="#" className="hover:text-white transition-colors">Terms of Service</a></li>
-                <li><a href="#" className="hover:text-white transition-colors">Contact</a></li>
+                <li><Link href="/legal/privacy-policy" className="hover:text-white transition-colors">Privacy Policy</Link></li>
+                <li><Link href="/legal/terms-of-service" className="hover:text-white transition-colors">Terms of Service</Link></li>
+                <li><Link href="/contact" className="hover:text-white transition-colors">Contact</Link></li>
               </ul>
             </div>
           </div>

@@ -476,12 +476,12 @@ export default function Contact() {
             </div>
 
             <div>
-              <h3 className="text-white font-semibold mb-4">Services</h3>
+              <h3 className="text-white font-semibold mb-4">Product</h3>
               <ul className="space-y-2 text-blue-200/70">
-                <li><Link href="/services" className="hover:text-white transition-colors">Real-Time Transcription</Link></li>
-                <li><Link href="/services" className="hover:text-white transition-colors">Batch Processing</Link></li>
-                <li><Link href="/services" className="hover:text-white transition-colors">Specialty Services</Link></li>
-                <li><Link href="/services" className="hover:text-white transition-colors">Enterprise Solutions</Link></li>
+                <li><Link href="/services" className="hover:text-white transition-colors">Services</Link></li>
+                <li><Link href="/pricing" className="hover:text-white transition-colors">Pricing</Link></li>
+                <li><Link href="/dashboard" className="hover:text-white transition-colors">Dashboard</Link></li>
+                <li><a href="#" className="hover:text-white transition-colors">API</a></li>
               </ul>
             </div>
 
