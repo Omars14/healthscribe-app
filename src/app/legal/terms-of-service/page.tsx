@@ -12,7 +12,8 @@ import {
   MapPin,
   Linkedin,
   Twitter,
-  Github
+  Github,
+  Globe
 } from 'lucide-react'
 
 export const metadata = {
