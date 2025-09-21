@@ -412,7 +412,7 @@ export default function About() {
             <div>
               <h3 className="text-white font-semibold mb-4">Product</h3>
               <ul className="space-y-2 text-blue-200/70">
-                <li><Link href="#features" className="hover:text-white transition-colors">Features</Link></li>
+                <li><Link href="/services" className="hover:text-white transition-colors">Services</Link></li>
                 <li><Link href="/pricing" className="hover:text-white transition-colors">Pricing</Link></li>
                 <li><Link href="/dashboard" className="hover:text-white transition-colors">Dashboard</Link></li>
                 <li><Link href="#" className="hover:text-white transition-colors">API</Link></li>
