@@ -1,0 +1,92 @@
+#!/bin/bash
+
+# Create the nginx config file
+cat > /etc/nginx/sites-available/healthscribe.pro << 'EOF'
+server {
+    listen 80;
+    server_name healthscribe.pro www.healthscribe.pro;
+    return 301 https://$server_name$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name healthscribe.pro www.healthscribe.pro;
+
+    ssl_certificate /etc/letsencrypt/live/healthscribe.pro/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/healthscribe.pro/privkey.pem;
+
+    # SSL security headers
+    add_header Strict-Transport-Security "max-age=63072000" always;
+    add_header X-Frame-Options DENY always;
+    add_header X-Content-Type-Options nosniff always;
+    add_header X-XSS-Protection "1; mode=block" always;
+
+    # CORS headers
+    add_header 'Access-Control-Allow-Origin' '*' always;
+    add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS' always;
+    add_header 'Access-Control-Allow-Headers' 'Authorization, Content-Type, Accept' always;
+
+    # Main app proxy - Next.js on port 3000
+    location / {
+        proxy_pass http://localhost:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+        proxy_read_timeout 86400;
+    }
+
+    # Auth service proxy - port 9999
+    location /auth/ {
+        proxy_pass http://localhost:9999/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+        proxy_read_timeout 86400;
+
+        # CORS for auth endpoints
+        add_header 'Access-Control-Allow-Origin' '*' always;
+        add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS' always;
+        add_header 'Access-Control-Allow-Headers' 'Authorization, Content-Type, Accept' always;
+    }
+
+    # REST API proxy - PostgREST on port 3001
+    location /rest/ {
+        proxy_pass http://localhost:3001/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+        proxy_read_timeout 86400;
+
+        # CORS for API endpoints
+        add_header 'Access-Control-Allow-Origin' '*' always;
+        add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS' always;
+        add_header 'Access-Control-Allow-Headers' 'Authorization, Content-Type, Accept, apikey' always;
+    }
+}
+EOF
+
+# Test nginx config
+sudo nginx -t
+
+# Reload nginx
+sudo systemctl reload nginx
+
+echo "✅ Nginx configuration updated and reloaded!"
+
+
+

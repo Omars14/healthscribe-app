@@ -6,7 +6,7 @@ import { useState, useEffect } from 'react'
 export default function DirectAdminPage() {
   const [users, setUsers] = useState([])
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
+  const [error, setError] = useState<string | null>(null)
   const [debugInfo, setDebugInfo] = useState('')
 
   useEffect(() => {
@@ -41,8 +41,9 @@ export default function DirectAdminPage() {
         setError(null)
       } catch (err) {
         console.error('🔥 DIRECT ADMIN: Error:', err)
-        setError(err.message)
-        setDebugInfo(`Error: ${err.message}`)
+        const errorMessage = err instanceof Error ? err.message : 'Unknown error'
+        setError(errorMessage)
+        setDebugInfo(`Error: ${errorMessage}`)
       } finally {
         setLoading(false)
       }

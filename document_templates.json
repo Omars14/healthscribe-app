@@ -1,0 +1,90 @@
+[
+  {
+    "id": "5c1d6420-d400-45c9-b803-5492f0908ba5",
+    "document_type": "consultation",
+    "display_name": "Consultation Note",
+    "formatting_instructions": "Format as a consultation note with: CHIEF COMPLAINT, HISTORY OF PRESENT ILLNESS, PAST MEDICAL HISTORY, MEDICATIONS, ALLERGIES, PHYSICAL EXAMINATION, ASSESSMENT, and PLAN sections.",
+    "structure_template": null,
+    "example_output": null,
+    "is_active": true,
+    "created_at": "2025-08-19T09:17:27.640531+00:00",
+    "updated_at": "2025-08-19T09:17:27.640531+00:00"
+  },
+  {
+    "id": "63f9ff42-a68c-4a0c-8d4f-f85bbeeab0bd",
+    "document_type": "surgery_report",
+    "display_name": "Surgery Report",
+    "formatting_instructions": "Format as an operative report with: PREOPERATIVE DIAGNOSIS, POSTOPERATIVE DIAGNOSIS, PROCEDURE PERFORMED, SURGEON, ASSISTANT, ANESTHESIA, INDICATIONS, FINDINGS, TECHNIQUE, and ESTIMATED BLOOD LOSS sections.",
+    "structure_template": null,
+    "example_output": null,
+    "is_active": true,
+    "created_at": "2025-08-19T09:17:27.640531+00:00",
+    "updated_at": "2025-08-19T09:17:27.640531+00:00"
+  },
+  {
+    "id": "3cb3f9fc-b856-4650-ae25-886053d14380",
+    "document_type": "discharge_summary",
+    "display_name": "Discharge Summary",
+    "formatting_instructions": "Format with: ADMISSION DATE, DISCHARGE DATE, ADMITTING DIAGNOSIS, DISCHARGE DIAGNOSIS, HOSPITAL COURSE, DISCHARGE MEDICATIONS, DISCHARGE INSTRUCTIONS, and FOLLOW-UP sections.",
+    "structure_template": null,
+    "example_output": null,
+    "is_active": true,
+    "created_at": "2025-08-19T09:17:27.640531+00:00",
+    "updated_at": "2025-08-19T09:17:27.640531+00:00"
+  },
+  {
+    "id": "277093ae-117a-417a-a829-c58ffb707bbe",
+    "document_type": "progress_note",
+    "display_name": "Progress Note",
+    "formatting_instructions": "Format as SOAP note with clear sections: SUBJECTIVE (patient complaints and symptoms), OBJECTIVE (vital signs and exam findings), ASSESSMENT (diagnosis and clinical impression), and PLAN (treatment and next steps).",
+    "structure_template": null,
+    "example_output": null,
+    "is_active": true,
+    "created_at": "2025-08-19T09:17:27.640531+00:00",
+    "updated_at": "2025-08-19T09:17:27.640531+00:00"
+  },
+  {
+    "id": "d8a4a7f5-ea80-401a-acae-4f536aa95d5c",
+    "document_type": "radiology_report",
+    "display_name": "Radiology Report",
+    "formatting_instructions": "Format with: INDICATION, TECHNIQUE, COMPARISON, FINDINGS (organized by anatomical region), and IMPRESSION sections.",
+    "structure_template": null,
+    "example_output": null,
+    "is_active": true,
+    "created_at": "2025-08-19T09:17:27.640531+00:00",
+    "updated_at": "2025-08-19T09:17:27.640531+00:00"
+  },
+  {
+    "id": "f70a9ce8-bd19-42f1-b033-e3f4140e1861",
+    "document_type": "pathology_report",
+    "display_name": "Pathology Report",
+    "formatting_instructions": "Format with: SPECIMEN IDENTIFICATION, GROSS DESCRIPTION, MICROSCOPIC DESCRIPTION, SPECIAL STAINS, and DIAGNOSIS sections.",
+    "structure_template": null,
+    "example_output": null,
+    "is_active": true,
+    "created_at": "2025-08-19T09:17:27.640531+00:00",
+    "updated_at": "2025-08-19T09:17:27.640531+00:00"
+  },
+  {
+    "id": "4b8d5e07-4bd3-438d-a8f4-ba351f89c4d1",
+    "document_type": "emergency_note",
+    "display_name": "Emergency Department Note",
+    "formatting_instructions": "Format with: CHIEF COMPLAINT, HPI, REVIEW OF SYSTEMS, PAST MEDICAL HISTORY, MEDICATIONS, ALLERGIES, PHYSICAL EXAM, ED COURSE, MEDICAL DECISION MAKING, and DISPOSITION sections.",
+    "structure_template": null,
+    "example_output": null,
+    "is_active": true,
+    "created_at": "2025-08-19T09:17:27.640531+00:00",
+    "updated_at": "2025-08-19T09:17:27.640531+00:00"
+  },
+  {
+    "id": "2fa0003e-3596-46e0-80ca-bb114f3373f4",
+    "document_type": "procedure_note",
+    "display_name": "Procedure Note",
+    "formatting_instructions": "Format with: PROCEDURE, INDICATION, CONSENT, PREPARATION, TECHNIQUE, FINDINGS, COMPLICATIONS, and POST-PROCEDURE INSTRUCTIONS sections.",
+    "structure_template": null,
+    "example_output": null,
+    "is_active": true,
+    "created_at": "2025-08-19T09:17:27.640531+00:00",
+    "updated_at": "2025-08-19T09:17:27.640531+00:00"
+  }
+]

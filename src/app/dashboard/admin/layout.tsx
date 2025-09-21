@@ -92,7 +92,7 @@ export default function AdminLayout({
         }
       } catch (error) {
         console.error('❌ Admin Layout: Admin check failed:', error)
-        toast.error(`Failed to verify admin access: ${error.message}`)
+        toast.error(`Failed to verify admin access: ${error instanceof Error ? error.message : 'Unknown error'}`)
         router.push('/dashboard')
       } finally {
         clearTimeout(timeout)

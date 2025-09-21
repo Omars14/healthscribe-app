@@ -6,9 +6,10 @@ const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
     const authHeader = request.headers.get('authorization')
     if (!authHeader) {
       return NextResponse.json(
@@ -24,7 +25,7 @@ export async function DELETE(
     const { data: transcription, error: fetchError } = await supabase
       .from('transcriptions')
       .select('*')
-      .eq('id', params.id)
+      .eq('id', id)
       .single()
 
     if (fetchError || !transcription) {
@@ -62,7 +63,7 @@ export async function DELETE(
     const { error: deleteError } = await supabase
       .from('transcriptions')
       .delete()
-      .eq('id', params.id)
+      .eq('id', id)
 
     if (deleteError) {
       return NextResponse.json(

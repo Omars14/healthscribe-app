@@ -1,16 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
-interface RouteParams {
-  params: {
-    id: string;
-  };
-}
-
 // Update user (role, status, etc.)
-export async function PATCH(request: NextRequest, { params }: RouteParams) {
+export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    console.log('🔧 Admin API: Updating user', params.id);
+    const { id } = await params;
+    console.log('🔧 Admin API: Updating user', id);
 
     // Get environment variables
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
@@ -28,7 +23,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       }
     });
 
-    const userId = params.id;
+    const userId = id;
     const body = await request.json();
 
     console.log('🔧 Admin API: Update request for user', userId, 'with body:', body);
@@ -113,9 +108,10 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 }
 
 // Deactivate user (DELETE method)
-export async function DELETE(request: NextRequest, { params }: RouteParams) {
+export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    console.log('🔧 Admin API: Deactivating user', params.id);
+    const { id } = await params;
+    console.log('🔧 Admin API: Deactivating user', id);
 
     // Get environment variables
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
@@ -133,7 +129,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
       }
     });
 
-    const userId = params.id;
+    const userId = id;
 
     // Deactivate user
     const { error: deactivateError } = await supabase

@@ -1,0 +1,59 @@
+{
+  "name": "healthscribe-pro",
+  "description": "Professional medical transcription services powered by AI",
+  "version": "1.0.0",
+  "type": "docker",
+  "build": {
+    "context": "..",
+    "dockerfile": "Dockerfile"
+  },
+  "services": [
+    {
+      "name": "healthscribe-app",
+      "image": "healthscribe-app:latest",
+      "ports": [
+        {
+          "containerPort": 3000,
+          "protocol": "tcp"
+        }
+      ],
+      "environment": {
+        "NODE_ENV": "production"
+      },
+      "volumes": [
+        {
+          "hostPath": "../logs",
+          "containerPath": "/app/logs"
+        },
+        {
+          "hostPath": "../uploads",
+          "containerPath": "/app/uploads"
+        }
+      ],
+      "restart": "unless-stopped"
+    }
+  ],
+  "networks": [
+    {
+      "name": "coolify"
+    }
+  ],
+  "domains": [
+    {
+      "name": "healthscribe.pro",
+      "ssl": true
+    }
+  ],
+  "environment_variables": [
+    "NEXT_PUBLIC_SUPABASE_URL",
+    "NEXT_PUBLIC_SUPABASE_ANON_KEY",
+    "SUPABASE_SERVICE_ROLE_KEY",
+    "N8N_WEBHOOK_URL",
+    "NEXT_PUBLIC_N8N_WEBHOOK_URL",
+    "NEXT_PUBLIC_URL",
+    "NEXT_PUBLIC_API_URL",
+    "GOOGLE_API_KEY",
+    "OPENAI_API_KEY",
+    "ENCRYPTION_KEY"
+  ]
+}

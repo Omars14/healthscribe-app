@@ -1,0 +1,54 @@
+version: '3.8'
+
+services:
+  # Healthscribe.pro - Medical Transcription System
+  healthscribe-app:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: healthscribe-app
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_URL=${NEXT_PUBLIC_URL}
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+      - NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL}
+      - NEXT_PUBLIC_SUPABASE_ANON_KEY=${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - NEXT_PUBLIC_N8N_WEBHOOK_URL=${NEXT_PUBLIC_N8N_WEBHOOK_URL}
+      - NEXT_PUBLIC_WEBHOOK_URL=${NEXT_PUBLIC_WEBHOOK_URL}
+      - N8N_WEBHOOK_URL=${N8N_WEBHOOK_URL}
+      - MAX_FILE_SIZE=${MAX_FILE_SIZE:-52428800}
+      - ALLOWED_FILE_TYPES=${ALLOWED_FILE_TYPES:-mp3,wav,m4a,aac,ogg,webm,flac}
+      - RATE_LIMIT_WINDOW=${RATE_LIMIT_WINDOW:-900000}
+      - RATE_LIMIT_MAX_REQUESTS=${RATE_LIMIT_MAX_REQUESTS:-100}
+    env_file:
+      - ../.env.local
+    volumes:
+      - ../logs:/app/logs
+      - ../uploads:/app/uploads
+    networks:
+      - coolify
+
+  # Nginx Reverse Proxy (for SSL and routing)
+  healthscribe-nginx:
+    image: nginx:alpine
+    container_name: healthscribe-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ../nginx.docker.conf:/etc/nginx/nginx.conf:ro
+      - ../ssl:/etc/nginx/ssl:ro
+      - ../logs/nginx:/var/log/nginx
+    depends_on:
+      - healthscribe-app
+    networks:
+      - coolify
+
+networks:
+  coolify:
+    driver: bridge

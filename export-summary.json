@@ -1,0 +1,20 @@
+{
+  "exportDate": "2025-09-15T23:38:37.016Z",
+  "tables": [
+    "public.user_profiles",
+    "public.transcriptions",
+    "public.transcription_edits",
+    "public.document_templates",
+    "public.transcription_metrics",
+    "public.transcriptions_with_format"
+  ],
+  "recordCounts": {
+    "public.user_profiles": 42,
+    "public.transcriptions": 1000,
+    "public.transcription_edits": 0,
+    "public.document_templates": 8,
+    "public.transcription_metrics": 0,
+    "public.transcriptions_with_format": 1000
+  },
+  "totalRecords": 2050
+}

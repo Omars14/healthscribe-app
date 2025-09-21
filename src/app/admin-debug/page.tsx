@@ -47,7 +47,7 @@ export default function AdminDebugPage() {
       }
     } catch (error) {
       console.error('Server check error:', error)
-      setServerCheck({ error: error.message })
+      setServerCheck({ error: error instanceof Error ? error.message : 'Unknown error' })
       toast.error('Server check failed!')
     } finally {
       setServerLoading(false)
@@ -147,9 +147,9 @@ export default function AdminDebugPage() {
                   </div>
                   
                   <div className="flex items-center justify-between">
-                    <span>Active:</span>
-                    <Badge variant={userProfile.is_active ? 'default' : 'destructive'}>
-                      {userProfile.is_active ? 'Yes' : 'No'}
+                    <span>Role:</span>
+                    <Badge variant={userProfile.role === 'admin' ? 'default' : 'secondary'}>
+                      {userProfile.role}
                     </Badge>
                   </div>
                   
