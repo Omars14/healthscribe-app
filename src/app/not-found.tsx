@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { Separator } from '@/components/ui/separator'
 import {
   Stethoscope,
   Home,
@@ -10,13 +11,66 @@ import {
   Mail,
   Phone,
   MessageSquare,
-  FileText
+  FileText,
+  Globe,
+  Linkedin,
+  Twitter,
+  Github
 } from 'lucide-react'
 
 export default function NotFound() {
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 flex items-center justify-center px-6">
-      <div className="max-w-2xl mx-auto text-center">
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 relative overflow-hidden">
+      {/* Background Effects */}
+      <div className="absolute inset-0 bg-gradient-to-br from-blue-600/20 via-purple-600/20 to-teal-600/20" />
+      <div className="absolute inset-0 bg-black/5" />
+
+      {/* Header */}
+      <header className="fixed top-0 left-0 right-0 z-50 backdrop-blur-xl bg-white/10 border-b border-white/20">
+        <div className="container mx-auto px-6 py-4">
+          <nav className="flex justify-between items-center">
+            <Link href="/" className="flex items-center space-x-3">
+              <div className="relative">
+                <div className="absolute inset-0 bg-gradient-to-r from-blue-500 to-purple-500 rounded-xl blur opacity-75" />
+                <div className="relative h-12 w-12 bg-gradient-to-r from-blue-500 to-purple-500 rounded-xl flex items-center justify-center">
+                  <Stethoscope className="h-7 w-7 text-white" />
+                </div>
+              </div>
+              <div>
+                <h1 className="text-2xl font-bold bg-gradient-to-r from-white to-blue-200 bg-clip-text text-transparent">
+                  Healthscribe Pro
+                </h1>
+                <p className="text-xs text-blue-200/80">AI Medical Transcription</p>
+              </div>
+            </Link>
+
+            <div className="hidden lg:flex items-center space-x-8">
+              <Link href="/" className="text-white/80 hover:text-white transition-colors font-medium">Home</Link>
+              <Link href="/about" className="text-white/80 hover:text-white transition-colors font-medium">About</Link>
+              <Link href="/services" className="text-white/80 hover:text-white transition-colors font-medium">Services</Link>
+              <Link href="/pricing" className="text-white/80 hover:text-white transition-colors font-medium">Pricing</Link>
+              <Link href="/contact" className="text-white/80 hover:text-white transition-colors font-medium">Contact</Link>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <Link href="/login">
+                <Button variant="ghost" className="text-white hover:bg-white/10 border-white/20">
+                  Sign In
+                </Button>
+              </Link>
+              <Link href="/dashboard">
+                <Button className="bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 shadow-lg shadow-blue-500/25">
+                  Start Free Trial
+                </Button>
+              </Link>
+            </div>
+          </nav>
+        </div>
+      </header>
+
+      {/* Main Content */}
+      <div className="pt-32 min-h-screen flex items-center justify-center px-6">
+        <div className="max-w-2xl mx-auto text-center">
         {/* 404 Badge */}
         <Badge className="mb-8 bg-red-500/20 text-red-300 border-red-400/30 px-6 py-3 text-lg">
           404 - Page Not Found
@@ -185,6 +239,74 @@ export default function NotFound() {
           </div>
         </div>
       </div>
+
+      {/* Footer */}
+      <footer className="border-t border-white/10 bg-black/20 backdrop-blur">
+        <div className="container mx-auto px-6 py-16">
+          <div className="grid md:grid-cols-4 gap-8">
+            <div className="space-y-4">
+              <Link href="/" className="flex items-center space-x-3">
+                <div className="h-10 w-10 bg-gradient-to-r from-blue-500 to-purple-500 rounded-lg flex items-center justify-center">
+                  <Stethoscope className="h-6 w-6 text-white" />
+                </div>
+                <span className="text-xl font-bold text-white">Healthscribe Pro</span>
+              </Link>
+              <p className="text-blue-200/70">
+                The most advanced AI-powered medical transcription platform for healthcare professionals.
+              </p>
+            </div>
+
+            <div>
+              <h3 className="text-white font-semibold mb-4">Product</h3>
+              <ul className="space-y-2 text-blue-200/70">
+                <li><Link href="/services" className="hover:text-white transition-colors">Services</Link></li>
+                <li><Link href="/pricing" className="hover:text-white transition-colors">Pricing</Link></li>
+                <li><Link href="/dashboard" className="hover:text-white transition-colors">Dashboard</Link></li>
+                <li><Link href="#" className="hover:text-white transition-colors">API</Link></li>
+              </ul>
+            </div>
+
+            <div>
+              <h3 className="text-white font-semibold mb-4">Company</h3>
+              <ul className="space-y-2 text-blue-200/70">
+                <li><Link href="/about" className="hover:text-white transition-colors">About Us</Link></li>
+                <li><Link href="#" className="hover:text-white transition-colors">Careers</Link></li>
+                <li><Link href="#" className="hover:text-white transition-colors">Press</Link></li>
+                <li><Link href="#" className="hover:text-white transition-colors">Blog</Link></li>
+              </ul>
+            </div>
+
+            <div>
+              <h3 className="text-white font-semibold mb-4">Support</h3>
+              <ul className="space-y-2 text-blue-200/70">
+                <li><Link href="/contact" className="hover:text-white transition-colors">Contact</Link></li>
+                <li><Link href="#" className="hover:text-white transition-colors">Help Center</Link></li>
+                <li><Link href="/legal/privacy-policy" className="hover:text-white transition-colors">Privacy Policy</Link></li>
+                <li><Link href="/legal/terms-of-service" className="hover:text-white transition-colors">Terms of Service</Link></li>
+              </ul>
+            </div>
+          </div>
+
+          <Separator className="my-8 bg-white/10" />
+
+          <div className="flex flex-col md:flex-row justify-between items-center">
+            <p className="text-blue-200/60">
+              © 2024 Healthscribe Pro. All rights reserved.
+            </p>
+            <div className="flex gap-6 mt-4 md:mt-0">
+              <a href="#" className="text-blue-200/60 hover:text-white transition-colors">
+                <Globe className="h-5 w-5" />
+              </a>
+              <a href="#" className="text-blue-200/60 hover:text-white transition-colors">
+                <Mail className="h-5 w-5" />
+              </a>
+              <a href="#" className="text-blue-200/60 hover:text-white transition-colors">
+                <Phone className="h-5 w-5" />
+              </a>
+            </div>
+          </div>
+        </div>
+      </footer>
     </div>
   );
 }

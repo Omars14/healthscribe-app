@@ -44,7 +44,10 @@ export const metadata = {
 
 export default function Services() {
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900">
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 relative overflow-hidden">
+      {/* Background Effects */}
+      <div className="absolute inset-0 bg-gradient-to-br from-blue-600/20 via-purple-600/20 to-teal-600/20" />
+      <div className="absolute inset-0 bg-black/5" />
       {/* Header */}
       <header className="fixed top-0 left-0 right-0 z-50 backdrop-blur-xl bg-white/10 border-b border-white/20">
         <div className="container mx-auto px-6 py-4">
@@ -569,8 +572,8 @@ export default function Services() {
               <h3 className="text-white font-semibold mb-4">Support</h3>
               <ul className="space-y-2 text-blue-200/70">
                 <li><Link href="#" className="hover:text-white transition-colors">Help Center</Link></li>
-                <li><Link href="#" className="hover:text-white transition-colors">Privacy Policy</Link></li>
-                <li><Link href="#" className="hover:text-white transition-colors">Terms of Service</Link></li>
+                <li><Link href="/legal/privacy-policy" className="hover:text-white transition-colors">Privacy Policy</Link></li>
+                <li><Link href="/legal/terms-of-service" className="hover:text-white transition-colors">Terms of Service</Link></li>
                 <li><Link href="/contact" className="hover:text-white transition-colors">Contact</Link></li>
               </ul>
             </div>
@@ -582,6 +585,17 @@ export default function Services() {
             <p className="text-blue-200/60">
               © 2024 Healthscribe Pro. All rights reserved.
             </p>
+            <div className="flex gap-6 mt-4 md:mt-0">
+              <a href="#" className="text-blue-200/60 hover:text-white transition-colors">
+                <Globe className="h-5 w-5" />
+              </a>
+              <a href="#" className="text-blue-200/60 hover:text-white transition-colors">
+                <Mail className="h-5 w-5" />
+              </a>
+              <a href="#" className="text-blue-200/60 hover:text-white transition-colors">
+                <Phone className="h-5 w-5" />
+              </a>
+            </div>
           </div>
         </div>
       </footer>
