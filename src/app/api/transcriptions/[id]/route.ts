@@ -3,11 +3,12 @@ import { NextRequest, NextResponse } from 'next/server'
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   console.log('🚀 API Route: Updating transcription...')
 
   try {
+    const { id } = await params;
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
     const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || ''
 
@@ -26,7 +27,7 @@ export async function PUT(
       }
     })
 
-    const transcriptionId = params.id
+    const transcriptionId = id
     const body = await request.json()
 
     console.log('🚀 API Route: Updating transcription ID:', transcriptionId)

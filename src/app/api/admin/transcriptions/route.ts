@@ -98,10 +98,19 @@ export async function GET(request: NextRequest) {
     }
 
     // Get total count for pagination
-    const { count, error: countError } = await query.count()
+    let count = 0
+    try {
+      const { count: totalCount, error: countError } = await supabase
+        .from('transcriptions')
+        .select('*', { count: 'exact', head: true })
 
-    if (countError) {
-      console.error('Error getting count:', countError)
+      if (countError) {
+        console.error('Error getting count:', countError)
+      } else {
+        count = totalCount || 0
+      }
+    } catch (err) {
+      console.error('Count error:', err)
     }
 
     // Apply pagination

@@ -118,7 +118,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Generate document type distribution
-    const documentTypeCount = {}
+    const documentTypeCount: Record<string, number> = {}
     transcriptions?.forEach(t => {
       const type = t.document_type || 'Consultation'
       const formattedType = formatDocumentType(type)

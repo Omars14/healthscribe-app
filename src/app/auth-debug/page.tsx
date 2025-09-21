@@ -7,9 +7,9 @@ import { supabase } from '@/lib/supabase'
 export default function AuthDebugPage() {
   const { user, session, userProfile, loading } = useAuth()
   const [serverProfile, setServerProfile] = useState(null)
-  const [serverError, setServerError] = useState(null)
+  const [serverError, setServerError] = useState<any>(null)
   const [clientProfile, setClientProfile] = useState(null)
-  const [clientError, setClientError] = useState(null)
+  const [clientError, setClientError] = useState<any>(null)
 
   // Test server-side profile fetch
   const testServerProfile = async () => {
@@ -33,7 +33,7 @@ export default function AuthDebugPage() {
         setServerProfile(null)
       }
     } catch (error) {
-      setServerError({ error: error.message })
+      setServerError({ error: error instanceof Error ? error.message : 'Unknown error' })
       setServerProfile(null)
     }
   }
@@ -57,7 +57,7 @@ export default function AuthDebugPage() {
         setClientError(null)
       }
     } catch (error) {
-      setClientError({ message: error.message })
+      setClientError({ message: error instanceof Error ? error.message : 'Unknown error' })
       setClientProfile(null)
     }
   }
