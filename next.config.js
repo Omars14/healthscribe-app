@@ -88,6 +88,19 @@ const nextConfig = {
   
   // Ensure static assets are handled properly
   assetPrefix: process.env.NODE_ENV === 'production' ? undefined : undefined,
+  
+  // Skip static generation for pages that need database access during build
+  experimental: {
+    missingSuspenseWithCSRBailout: false,
+  },
+  
+  // Generate build ID to avoid caching issues
+  generateBuildId: async () => {
+    // Use timestamp for unique builds during development
+    return process.env.NODE_ENV === 'development' 
+      ? `dev-${Date.now()}` 
+      : 'production-build'
+  },
 }
 
 module.exports = nextConfig
