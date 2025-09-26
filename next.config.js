@@ -86,8 +86,13 @@ const nextConfig = {
   compress: true,
   poweredByHeader: false,
   
-  // Ensure static assets are handled properly
+  // Ensure static assets are handled properly  
   assetPrefix: process.env.NODE_ENV === 'production' ? undefined : undefined,
+  
+  // Ensure proper static file serving
+  images: {
+    unoptimized: true
+  },
   
   // Remove experimental features that might cause issues
   // (missingSuspenseWithCSRBailout not available in Next.js 15)
