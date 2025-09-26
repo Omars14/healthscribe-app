@@ -7,6 +7,10 @@ import TranscriptionPlayer from '@/components/TranscriptionPlayer'
 import { BulkUploadModal } from '@/components/bulk-upload-modal'
 import { Loader2, Search, Filter, RefreshCw, Trash2, AlertTriangle, Upload } from 'lucide-react'
 
+// Force dynamic rendering - no static generation
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
 interface TranscriptionData {
   id: string
   file_name: string
