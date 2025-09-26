@@ -9,7 +9,6 @@ import { Loader2, Search, Filter, RefreshCw, Trash2, AlertTriangle, Upload } fro
 
 // Force dynamic rendering - no static generation
 export const dynamic = 'force-dynamic'
-export const revalidate = 0
 
 interface TranscriptionData {
   id: string

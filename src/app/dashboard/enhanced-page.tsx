@@ -2,7 +2,6 @@
 
 // Force dynamic rendering - no static generation
 export const dynamic = 'force-dynamic'
-export const revalidate = 0
 
 import { useState, useEffect } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
