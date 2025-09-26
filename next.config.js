@@ -89,10 +89,8 @@ const nextConfig = {
   // Ensure static assets are handled properly
   assetPrefix: process.env.NODE_ENV === 'production' ? undefined : undefined,
   
-  // Skip static generation for pages that need database access during build
-  experimental: {
-    missingSuspenseWithCSRBailout: false,
-  },
+  // Remove experimental features that might cause issues
+  // (missingSuspenseWithCSRBailout not available in Next.js 15)
   
   // Generate build ID to avoid caching issues
   generateBuildId: async () => {
