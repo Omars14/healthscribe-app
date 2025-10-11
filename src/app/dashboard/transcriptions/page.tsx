@@ -46,7 +46,7 @@ interface Transcription {
 }
 
 export default function TranscriptionsPage() {
-  const { user } = useAuth()
+  const { user, session } = useAuth()
   const [transcriptions, setTranscriptions] = useState<Transcription[]>([])
   const [filteredTranscriptions, setFilteredTranscriptions] = useState<Transcription[]>([])
   const [loading, setLoading] = useState(true)
@@ -71,6 +71,7 @@ export default function TranscriptionsPage() {
     try {
       console.log('🚀 USING API ROUTE: Fetching transcriptions via server-side API...')
       console.log('🚀 Current user:', user?.email, 'User ID:', user?.id)
+      console.log('🚀 Session available:', !!session, 'Token available:', !!session?.access_token)
       
       if (!user?.id) {
         console.log('❌ No authenticated user found')
@@ -79,13 +80,21 @@ export default function TranscriptionsPage() {
         return
       }
       
-      console.log('🚀 Making HTTP request to /api/transcriptions')
+      if (!session?.access_token) {
+        console.log('❌ No session token available')
+        setTranscriptions([])
+        setLoading(false)
+        return
+      }
+      
+      console.log('🚀 Making HTTP request to /api/transcriptions with auth token')
       
       // Use API route instead of direct Supabase query
       const response = await fetch('/api/transcriptions', {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
         },
       })
       

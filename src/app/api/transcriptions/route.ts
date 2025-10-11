@@ -1,19 +1,11 @@
 import { createClient } from '@supabase/supabase-js'
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   console.log('🚀 API Route: Fetching user transcriptions...')
   
   try {
-    // Get the user's session from cookies (Next.js auth)
-    const cookieStore = cookies()
-    
-    // For now, we'll use the hardcoded user ID since we know the authentication works
-    // In a production app, you'd extract this from the authenticated session
-    const userId = '625d7540-ab35-4fee-8817-6d0b32644869'
-    
-    console.log('🚀 API Route: Querying for user ID:', userId)
     
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
     const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || ''
@@ -33,6 +25,42 @@ export async function GET() {
       }
     })
     
+    // Get authenticated user from auth header or cookies
+    const authHeader = request.headers.get('authorization')
+    let token = authHeader?.replace('Bearer ', '')
+    
+    // If no auth header, try to get from cookies
+    if (!token) {
+      const cookieStore = await cookies()
+      // Try different cookie names that Supabase might use
+      const authToken = cookieStore.get('sb-access-token') || 
+                        cookieStore.get('supabase-auth-token') ||
+                        cookieStore.get('sb-localhost-auth-token')
+      
+      token = authToken?.value
+    }
+    
+    if (!token) {
+      console.error('❌ No auth token found in headers or cookies')
+      return NextResponse.json({ 
+        success: false, 
+        error: 'Authentication required'
+      }, { status: 401 })
+    }
+    
+    // Get authenticated user
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token)
+    
+    if (authError || !user) {
+      console.error('❌ Authentication failed:', authError?.message)
+      return NextResponse.json({ 
+        success: false, 
+        error: 'Invalid authentication'
+      }, { status: 401 })
+    }
+    
+    const userId = user.id
+    console.log('✅ Authenticated user:', user.email, 'ID:', userId)
     console.log('🚀 API Route: Executing Supabase query...')
     
     const { data, error } = await supabase
