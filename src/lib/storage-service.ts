@@ -304,22 +304,54 @@ export async function testBucketAccess(): Promise<{ exists: boolean; isPublic: b
  * Get a signed URL for private audio file access
  */
 export async function getSignedAudioUrl(
-  filePath: string,
+  filePathOrUrl: string,
   expiresIn: number = 3600
 ): Promise<{ url: string | null; error: string | null }> {
   try {
+    // Extract the file path from the URL if a full URL was provided
+    let filePath = filePathOrUrl
+    
+    // Check if it's a full URL and extract the path
+    if (filePathOrUrl.includes('http')) {
+      // Example URL: https://supabase.healthscribe.pro/storage/v1/object/public/audio-files/USER_ID/FILE.mp3
+      // We need to extract: USER_ID/FILE.mp3
+      const match = filePathOrUrl.match(/\/audio-files\/(.+)$/)
+      if (match && match[1]) {
+        filePath = match[1]
+        console.log(`📁 Extracted file path from URL: ${filePath}`)
+      } else {
+        console.warn(`⚠️ Could not extract file path from URL: ${filePathOrUrl}`)
+        // If the file is already public, just return the URL as-is
+        if (filePathOrUrl.includes('/public/')) {
+          console.log(`✅ Using public URL directly: ${filePathOrUrl}`)
+          return { url: filePathOrUrl, error: null }
+        }
+        return { url: null, error: 'Invalid file path or URL format' }
+      }
+    }
+    
     const { data, error } = await supabase.storage
       .from(AUDIO_BUCKET)
       .createSignedUrl(filePath, expiresIn)
     
     if (error) {
       console.error('Signed URL error:', error)
+      // If file is public and signed URL fails, try returning the public URL
+      if (filePathOrUrl.includes('/public/')) {
+        console.log(`⚠️ Signed URL failed, returning public URL: ${filePathOrUrl}`)
+        return { url: filePathOrUrl, error: null }
+      }
       return { url: null, error: error.message }
     }
     
     return { url: data.signedUrl, error: null }
   } catch (error) {
     console.error('Get signed URL error:', error)
+    // If file is public and an exception occurs, try returning the public URL
+    if (filePathOrUrl.includes('/public/')) {
+      console.log(`⚠️ Exception occurred, returning public URL: ${filePathOrUrl}`)
+      return { url: filePathOrUrl, error: null }
+    }
     return { 
       url: null, 
       error: error instanceof Error ? error.message : 'Failed to get signed URL' 
