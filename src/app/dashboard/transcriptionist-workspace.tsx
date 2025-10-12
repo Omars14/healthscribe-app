@@ -799,7 +799,7 @@ export default function TranscriptionistWorkspace() {
                     ref={fileInputRef}
                     type="file" 
                     className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" 
-                    accept="audio/*,audio/mpeg,audio/wav,audio/webm,audio/ogg,audio/mp4,audio/m4a,.mp3,.wav,.m4a,.ogg,.webm,.mp4"
+                    accept="audio/*,.mp3,.wav,.m4a,.aac,.ogg,.opus,.webm,.mp4,.flac,.amr,.3gp"
                     onChange={handleFileSelect}
                   />
                   {selectedFile ? (

@@ -67,9 +67,17 @@ export function BulkUploadModal({ isOpen, onClose, onComplete }: BulkUploadModal
     for (let i = 0; i < selectedFiles.length; i++) {
       const file = selectedFiles[i]
       
-      // Validate file type
-      const validTypes = ['audio/mpeg', 'audio/wav', 'audio/webm', 'audio/ogg', 'audio/mp4', 'audio/m4a', 'audio/x-m4a']
-      if (!validTypes.includes(file.type) && !file.name.match(/\.(mp3|wav|m4a|ogg|webm|mp4)$/i)) {
+      // Validate file type - comprehensive audio format support
+      const validTypes = [
+        'audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/x-wav', 'audio/wave',
+        'audio/m4a', 'audio/x-m4a', 'audio/aac', 'audio/mp4',
+        'audio/webm', 'audio/ogg', 'audio/opus',
+        'audio/flac', 'audio/x-flac', 'audio/amr', 'audio/3gpp'
+      ]
+      const extension = file.name.split('.').pop()?.toLowerCase()
+      const validExtensions = ['mp3', 'wav', 'm4a', 'aac', 'ogg', 'opus', 'webm', 'mp4', 'flac', 'amr', '3gp']
+      
+      if (!validTypes.includes(file.type) && !validExtensions.includes(extension || '')) {
         toast({
           title: 'Invalid file type',
           description: `${file.name} is not a valid audio file`,
@@ -369,12 +377,12 @@ export function BulkUploadModal({ isOpen, onClose, onComplete }: BulkUploadModal
             >
               <Upload className="w-12 h-12 text-gray-400 mx-auto mb-3" />
               <p className="text-gray-600 font-medium">Click to select audio files</p>
-              <p className="text-sm text-gray-500 mt-1">MP3, WAV, M4A, OGG (max 100MB each)</p>
+              <p className="text-sm text-gray-500 mt-1">MP3, WAV, M4A, AAC, FLAC, OGG, WebM, AMR (max 100MB each)</p>
               <input
                 ref={fileInputRef}
                 type="file"
                 multiple
-                accept="audio/*,.mp3,.wav,.m4a,.ogg,.webm"
+                accept="audio/*,.mp3,.wav,.m4a,.aac,.ogg,.opus,.webm,.mp4,.flac,.amr,.3gp"
                 onChange={handleFileSelect}
                 className="hidden"
                 disabled={isProcessing}

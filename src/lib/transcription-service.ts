@@ -159,17 +159,48 @@ export function formatFileSize(bytes: number | null | undefined): string {
  */
 export function validateAudioFile(file: File): { valid: boolean; error?: string } {
   const MAX_SIZE = 100 * 1024 * 1024 // 100MB
+  
+  // Comprehensive list of supported audio formats
+  // Includes all Deepgram-supported formats for medical transcription
   const ALLOWED_TYPES = [
+    // MP3
     'audio/mpeg',
+    'audio/mp3',
+    
+    // WAV
     'audio/wav',
-    'audio/webm',
-    'audio/ogg',
-    'audio/mp4',
+    'audio/x-wav',
+    'audio/wave',
+    'audio/vnd.wave',
+    
+    // M4A/AAC
     'audio/m4a',
     'audio/x-m4a',
-    'audio/mp3',
-    'audio/x-wav',
-    'audio/wave'
+    'audio/aac',
+    'audio/aacp',
+    'audio/mp4',
+    'audio/x-m4p',
+    
+    // OGG/Opus
+    'audio/ogg',
+    'audio/opus',
+    'audio/x-opus+ogg',
+    
+    // WebM
+    'audio/webm',
+    
+    // FLAC (lossless, high quality)
+    'audio/flac',
+    'audio/x-flac',
+    
+    // AMR (common in medical dictation devices)
+    'audio/amr',
+    'audio/amr-wb',
+    'audio/amr-wb+',
+    
+    // Other supported formats
+    'audio/3gpp',
+    'audio/3gpp2'
   ]
 
   if (file.size > MAX_SIZE) {
@@ -179,10 +210,14 @@ export function validateAudioFile(file: File): { valid: boolean; error?: string 
     }
   }
 
-  if (!ALLOWED_TYPES.includes(file.type) && !file.name.match(/\.(mp3|wav|m4a|ogg|webm|mp4)$/i)) {
+  // Check both MIME type and file extension for maximum compatibility
+  const extension = file.name.split('.').pop()?.toLowerCase()
+  const supportedExtensions = ['mp3', 'wav', 'm4a', 'aac', 'ogg', 'opus', 'webm', 'mp4', 'flac', 'amr', '3gp']
+  
+  if (!ALLOWED_TYPES.includes(file.type) && !supportedExtensions.includes(extension || '')) {
     return {
       valid: false,
-      error: 'Invalid audio format. Please upload MP3, WAV, M4A, OGG, or WebM files'
+      error: 'Invalid audio format. Supported: MP3, WAV, M4A, AAC, OGG, FLAC, AMR, WebM'
     }
   }
 

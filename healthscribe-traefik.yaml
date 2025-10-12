@@ -1,0 +1,97 @@
+http:
+  routers:
+    supabase-auth:
+      rule: "Host(`supabase.healthscribe.pro`) && PathPrefix(`/auth/v1`)"
+      service: supabase-auth
+      entryPoints:
+        - https
+      middlewares:
+        - cors-headers
+      tls:
+        certResolver: letsencrypt
+
+    supabase-rest:
+      rule: "Host(`supabase.healthscribe.pro`) && PathPrefix(`/rest/v1`)"
+      service: supabase-rest
+      entryPoints:
+        - https
+      middlewares:
+        - cors-headers
+      tls:
+        certResolver: letsencrypt
+
+    supabase-storage:
+      rule: "Host(`supabase.healthscribe.pro`) && PathPrefix(`/storage/v1`)"
+      service: supabase-storage
+      entryPoints:
+        - https
+      middlewares:
+        - cors-headers
+      tls:
+        certResolver: letsencrypt
+
+    n8n-webhook:
+      rule: "Host(`n8n.healthscribe.pro`)"
+      service: n8n
+      entryPoints:
+        - https
+      middlewares:
+        - cors-headers
+      tls:
+        certResolver: letsencrypt
+
+    healthscribe-main:
+      rule: "Host(`healthscribe.pro`) || Host(`www.healthscribe.pro`)"
+      service: healthscribe-app
+      entryPoints:
+        - https
+      tls:
+        certResolver: letsencrypt
+
+  services:
+    supabase-auth:
+      loadBalancer:
+        servers:
+          - url: "http://10.0.3.8:9999"
+
+    supabase-rest:
+      loadBalancer:
+        servers:
+          - url: "http://10.0.3.7:3000"
+
+    supabase-storage:
+      loadBalancer:
+        servers:
+          - url: "http://10.0.3.9:5000"
+
+    n8n:
+      loadBalancer:
+        servers:
+          - url: "http://10.0.1.6:5678"
+
+    healthscribe-app:
+      loadBalancer:
+        servers:
+          - url: "http://10.0.1.8:3000"
+
+  middlewares:
+    cors-headers:
+      headers:
+        accessControlAllowMethods:
+          - GET
+          - POST
+          - PUT
+          - PATCH
+          - DELETE
+          - OPTIONS
+        accessControlAllowOriginList:
+          - "https://healthscribe.pro"
+          - "https://www.healthscribe.pro"
+        accessControlAllowHeaders:
+          - "*"
+        accessControlExposeHeaders:
+          - "*"
+        accessControlAllowCredentials: true
+        accessControlMaxAge: 3600
+        addVaryHeader: true
+
