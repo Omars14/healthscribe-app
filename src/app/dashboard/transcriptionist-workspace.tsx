@@ -365,7 +365,22 @@ export default function TranscriptionistWorkspace() {
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) {
+      console.log('📁 File selected:', file.name, file.type, file.size)
       setSelectedFile(file)
+    }
+  }
+
+  const triggerFileInput = (e?: React.MouseEvent) => {
+    if (e) {
+      e.preventDefault()
+      e.stopPropagation()
+    }
+    console.log('🖱️ Triggering file input click, ref exists:', !!fileInputRef.current)
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '' // Reset to allow selecting same file
+      fileInputRef.current.click()
+    } else {
+      console.error('❌ File input ref is null')
     }
   }
 
@@ -743,13 +758,13 @@ export default function TranscriptionistWorkspace() {
                   onDragLeave={handleDrag}
                   onDragOver={handleDrag}
                   onDrop={handleDrop}
-                  onClick={() => fileInputRef.current?.click()}
+                  onClick={triggerFileInput}
                 >
                   <input 
                     ref={fileInputRef}
                     type="file" 
                     className="hidden" 
-                    accept="audio/*"
+                    accept="audio/*,audio/mpeg,audio/wav,audio/webm,audio/ogg,audio/mp4,audio/m4a,.mp3,.wav,.m4a,.ogg,.webm,.mp4"
                     onChange={handleFileSelect}
                   />
                   {selectedFile ? (
