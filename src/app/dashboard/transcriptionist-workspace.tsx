@@ -421,23 +421,16 @@ export default function TranscriptionistWorkspace() {
     }
     
     setUploading(true)
-    setUploadProgress(0)
-
-    // Optimistically add to list with pending status
-    const optimisticTranscription: Transcription = {
-      id: `temp-${Date.now()}`,
-      file_name: selectedFile.name,
-      doctor_name: uploadFormData.doctorName,
-      patient_name: uploadFormData.patientName,
-      document_type: uploadFormData.documentType,
-      transcription_text: '',
-      audio_url: URL.createObjectURL(selectedFile), // Use local URL for optimistic playback
-      created_at: new Date().toISOString(),
-      status: 'pending',
-      file_size: selectedFile.size
+    setUploadProgress(10)
+    
+    // Store upload info for later
+    const uploadInfo = {
+      fileName: selectedFile.name,
+      doctorName: uploadFormData.doctorName,
+      patientName: uploadFormData.patientName
     }
     
-    setTranscriptions(prev => [optimisticTranscription, ...prev])
+    console.log('📤 Starting upload:', uploadInfo.fileName)
     
     try {
       // Submit with real-time updates and progress tracking
@@ -449,111 +442,135 @@ export default function TranscriptionistWorkspace() {
           documentType: uploadFormData.documentType
         },
         async (status: TranscriptionStatus) => {
-          console.log('Real-time status update:', status)
+          console.log('📡 Real-time status update:', { id: status.id, status: status.status })
 
           // Update progress based on status
           if (status.status === 'pending') {
-            setUploadProgress(25)
+            setUploadProgress(30)
           } else if (status.status === 'in_progress') {
-            setUploadProgress(75)
+            setUploadProgress(60)
           } else if (status.status === 'completed') {
-            setUploadProgress(100)
+            setUploadProgress(90)
           }
 
-          // Update the transcription in the list with real-time status
-          setTranscriptions(prev => prev.map(t => {
-            if (t.id === optimisticTranscription.id || t.id === status.id) {
-              return {
-                ...t,
-                id: status.id,
-                status: status.status,
-                transcription_text: status.transcription_text || t.transcription_text,
-                audio_url: status.audio_url || t.audio_url,
-              }
+          // Update existing transcription in the list (if it exists)
+          setTranscriptions(prev => {
+            const exists = prev.some(t => t.id === status.id)
+            if (exists) {
+              return prev.map(t => {
+                if (t.id === status.id) {
+                  return {
+                    ...t,
+                    status: status.status,
+                    transcription_text: status.transcription_text || t.transcription_text,
+                    audio_url: status.audio_url || t.audio_url,
+                  }
+                }
+                return t
+              })
             }
-            return t
-          }))
+            return prev
+          })
 
-          // If completed, get signed URL for playback
-          if (status.status === 'completed' && status.audio_url) {
-            const signedUrl = await getSignedAudioUrl(status.audio_url)
-            if (signedUrl.url) {
-              setTranscriptions(prev => prev.map(t =>
-                t.id === status.id ? { ...t, audio_url: signedUrl.url! } : t
-              ))
-            }
-          }
-
-          // If completed, refresh to get full data and auto-select
+          // If completed or failed, force refresh to show final state
           if (status.status === 'completed' || status.status === 'failed') {
-            console.log('🎉 Transcription complete! Refreshing and selecting...')
+            console.log('🎉 Transcription processing complete! Force refreshing...')
             
-            // Show browser notification if permission is granted
+            // Show browser notification
             if (status.status === 'completed' && 'Notification' in window && Notification.permission === 'granted') {
               new Notification('Transcription Complete! ✅', {
                 body: `Your transcription is ready to review`,
                 icon: '/favicon.ico',
-                tag: status.id // Prevents duplicate notifications
+                tag: status.id
               })
             }
             
-            // Refresh to get full data from database
-            await fetchTranscriptions(false, true) // Force refresh to get latest data
+            setUploadProgress(95)
             
-            // Auto-select the completed transcription after a brief delay to ensure state is updated
+            // FORCE refresh to get complete data from database
+            await fetchTranscriptions(false, true)
+            
+            setUploadProgress(100)
+            
+            // Auto-select after data is loaded
             setTimeout(() => {
               setTranscriptions(prev => {
                 const completedTranscription = prev.find(t => t.id === status.id)
                 if (completedTranscription) {
-                  console.log('✅ Auto-selecting completed transcription:', completedTranscription.file_name)
+                  console.log('✅ Auto-selecting:', completedTranscription.file_name)
                   setSelectedTranscription(completedTranscription)
                   
-                  // Scroll to the completed item in the list
-                  const element = document.querySelector(`[data-transcription-id="${status.id}"]`)
-                  if (element) {
-                    element.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
-                    
-                    // Add a brief highlight animation
-                    element.classList.add('ring-2', 'ring-green-500')
-                    setTimeout(() => {
-                      element.classList.remove('ring-2', 'ring-green-500')
-                    }, 2000)
-                  }
+                  // Scroll and highlight
+                  setTimeout(() => {
+                    const element = document.querySelector(`[data-transcription-id="${status.id}"]`)
+                    if (element) {
+                      element.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+                      element.classList.add('ring-2', 'ring-green-500', 'transition-all')
+                      setTimeout(() => {
+                        element.classList.remove('ring-2', 'ring-green-500')
+                      }, 3000)
+                    }
+                  }, 100)
                 }
                 return prev
               })
-            }, 500) // Small delay to ensure DOM is updated
+            }, 600)
           }
         }
       )
       
       if (response.success && response.transcriptionId) {
-        // Update optimistic entry with real ID
-        setTranscriptions(prev => prev.map(t => 
-          t.id === optimisticTranscription.id 
-            ? { ...t, id: response.transcriptionId! }
-            : t
-        ))
+        console.log(`✅ Upload successful, ID: ${response.transcriptionId}`)
+        setUploadProgress(20)
         
-        // Clear form immediately for better UX
+        // IMMEDIATELY fetch to show the new transcription in the list
+        console.log('🔄 Fetching transcriptions to show new upload...')
+        await fetchTranscriptions(false, true)
+        
+        // Find and highlight the newly uploaded item
+        setTimeout(() => {
+          setTranscriptions(prev => {
+            const newItem = prev.find(t => t.id === response.transcriptionId)
+            if (newItem) {
+              console.log('✅ Found new upload in list:', newItem.file_name)
+              setSelectedTranscription(newItem)
+              
+              // Scroll to it
+              setTimeout(() => {
+                const element = document.querySelector(`[data-transcription-id="${response.transcriptionId}"]`)
+                if (element) {
+                  element.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+                  element.classList.add('ring-2', 'ring-blue-500', 'transition-all')
+                  setTimeout(() => {
+                    element.classList.remove('ring-2', 'ring-blue-500')
+                  }, 4000)
+                }
+              }, 100)
+            } else {
+              console.warn('⚠️ New upload not found in list, will appear on next refresh')
+            }
+            return prev
+          })
+        }, 500)
+        
+        // Clear form
         setSelectedFile(null)
         setUploadFormData({ doctorName: '', patientName: '', documentType: 'consultation' })
         setUploading(false)
+        setUploadProgress(0)
         
-        // Show non-blocking success message
-        console.log(`✅ Transcription submitted: ${response.transcriptionId}`)
+        console.log('✅ Upload flow complete')
       } else {
-        // Remove optimistic entry on failure
-        setTranscriptions(prev => prev.filter(t => t.id !== optimisticTranscription.id))
         throw new Error(response.error || 'Failed to submit transcription')
       }
     } catch (error) {
-      // Remove optimistic entry on error
-      setTranscriptions(prev => prev.filter(t => t.id !== optimisticTranscription.id))
-      console.error('Upload error:', error)
+      console.error('❌ Upload error:', error)
       alert(`Failed to upload: ${error instanceof Error ? error.message : 'Unknown error'}`)
       setUploading(false)
       setUploadProgress(0)
+      
+      // Ensure list is fresh even after error
+      await fetchTranscriptions(false, true)
     }
   }
 
@@ -862,7 +879,19 @@ export default function TranscriptionistWorkspace() {
             {/* Transcription List */}
             <Card>
               <CardHeader className="pb-3">
-                <CardTitle className="text-lg">Transcriptions</CardTitle>
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-lg">Transcriptions</CardTitle>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => fetchTranscriptions(true, true)}
+                    disabled={isFetching}
+                    className="h-8 px-3 text-xs"
+                  >
+                    <RefreshCw className={`h-3 w-3 mr-1 ${isFetching ? 'animate-spin' : ''}`} />
+                    Refresh
+                  </Button>
+                </div>
                 <div className="flex gap-2 mt-2">
                   <div className="relative flex-1">
                     <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
