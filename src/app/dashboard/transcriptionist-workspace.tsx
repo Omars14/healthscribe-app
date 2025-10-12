@@ -484,9 +484,45 @@ export default function TranscriptionistWorkspace() {
             }
           }
 
-          // If completed, refresh to get full data
+          // If completed, refresh to get full data and auto-select
           if (status.status === 'completed' || status.status === 'failed') {
-            fetchTranscriptions(false, true) // Force refresh to get latest data
+            console.log('🎉 Transcription complete! Refreshing and selecting...')
+            
+            // Show browser notification if permission is granted
+            if (status.status === 'completed' && 'Notification' in window && Notification.permission === 'granted') {
+              new Notification('Transcription Complete! ✅', {
+                body: `Your transcription is ready to review`,
+                icon: '/favicon.ico',
+                tag: status.id // Prevents duplicate notifications
+              })
+            }
+            
+            // Refresh to get full data from database
+            await fetchTranscriptions(false, true) // Force refresh to get latest data
+            
+            // Auto-select the completed transcription after a brief delay to ensure state is updated
+            setTimeout(() => {
+              setTranscriptions(prev => {
+                const completedTranscription = prev.find(t => t.id === status.id)
+                if (completedTranscription) {
+                  console.log('✅ Auto-selecting completed transcription:', completedTranscription.file_name)
+                  setSelectedTranscription(completedTranscription)
+                  
+                  // Scroll to the completed item in the list
+                  const element = document.querySelector(`[data-transcription-id="${status.id}"]`)
+                  if (element) {
+                    element.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+                    
+                    // Add a brief highlight animation
+                    element.classList.add('ring-2', 'ring-green-500')
+                    setTimeout(() => {
+                      element.classList.remove('ring-2', 'ring-green-500')
+                    }, 2000)
+                  }
+                }
+                return prev
+              })
+            }, 500) // Small delay to ensure DOM is updated
           }
         }
       )
@@ -854,6 +890,7 @@ export default function TranscriptionistWorkspace() {
                   {filteredTranscriptions.map((transcription) => (
                     <div
                       key={transcription.id}
+                      data-transcription-id={transcription.id}
                       className={`relative group border-b cursor-pointer hover:bg-accent/50 transition-colors ${
                         selectedTranscription?.id === transcription.id ? 'bg-accent' : ''
                       }`}

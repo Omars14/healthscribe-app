@@ -38,6 +38,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .single()
 
       if (error) {
+        // Silently ignore 406 errors (PostgREST content negotiation issues)
+        if (error.message?.includes('406') || error.code === '406') {
+          console.log('⚠️ User profile fetch returned 406 - non-critical, continuing...')
+          return
+        }
+        
         // If profile doesn't exist, create one
         if (error.code === 'PGRST116') {
           // Use the current user from state instead of making another API call
@@ -57,12 +63,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               setUserProfile(newProfile as UserProfile)
             }
           }
+        } else {
+          console.warn('User profile fetch error:', error.message)
         }
       } else if (data) {
         setUserProfile(data as UserProfile)
       }
     } catch (error) {
-      console.error('Error fetching user profile:', error)
+      // Suppress 406 errors in console
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      if (!errorMessage.includes('406')) {
+        console.error('Error fetching user profile:', error)
+      }
     }
   }
 
