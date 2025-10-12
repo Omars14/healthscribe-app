@@ -74,10 +74,30 @@ export async function POST(request: NextRequest) {
       fileType = audioFile.type
       
       // Upload to storage (for backward compatibility)
-      audioUrl = await uploadAudioToStorage(audioFile, userId)
+      try {
+        audioUrl = await uploadAudioToStorage(audioFile, userId)
+      } catch (uploadError) {
+        console.error('❌ Storage upload error:', uploadError)
+        return NextResponse.json({ 
+          error: 'Failed to upload audio file to storage',
+          details: uploadError instanceof Error ? uploadError.message : 'Unknown upload error',
+          suggestion: 'Please try again. If the problem persists, contact support.'
+        }, { status: 500 })
+      }
     }
     
-    // Step 2: Create database record with audio URL
+    // Step 2: Validate audio URL before proceeding
+    if (!audioUrl || audioUrl.trim() === '') {
+      console.error('❌ Audio URL is empty - upload failed')
+      return NextResponse.json({ 
+        error: 'Failed to upload audio file to storage. Please try again.',
+        details: 'Audio URL is empty - storage upload may have failed'
+      }, { status: 500 })
+    }
+    
+    console.log('✅ Audio URL validated:', audioUrl)
+    
+    // Step 3: Create database record with audio URL
     const transcription = await createTranscriptionRecord({
       fileName,
       doctorName,
@@ -92,7 +112,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to create transcription record' }, { status: 500 })
     }
     
-    // Step 3: Send to n8n - IMPORTANT: We need to await briefly to ensure it starts
+    // Step 4: Send to n8n - IMPORTANT: We need to await briefly to ensure it starts
     console.log('🎯 About to call sendToN8NAsync for transcription:', transcription.id)
     console.log('📊 Audio URL being sent to n8n:', audioUrl)
     console.log('📊 Metadata:', { doctorName, patientName, documentType })
@@ -212,12 +232,25 @@ async function uploadAudioToStorage(file: File, userId: string | null): Promise<
       .getPublicUrl(filePath)
     
     console.log('✅ Audio uploaded successfully:', publicUrl)
+    
+    // Validate the public URL before returning
+    if (!publicUrl || publicUrl.trim() === '') {
+      console.error('❌ Public URL is empty even though upload reported success')
+      throw new Error('Storage upload succeeded but returned empty URL')
+    }
+    
     return publicUrl
     
   } catch (error) {
     console.error('❌ Failed to upload audio to storage:', error)
-    // Return empty string if upload fails - transcription can still proceed
-    return ''
+    console.error('Error details:', {
+      message: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined
+    })
+    
+    // Throw error instead of returning empty string
+    // This will cause the API to fail early instead of sending empty URL to n8n
+    throw new Error(`Storage upload failed: ${error instanceof Error ? error.message : String(error)}`)
   }
 }
 
