@@ -38,37 +38,19 @@ export async function submitTranscription(
   try {
     // Get the current session for user ID
     const { data: { session } } = await supabase.auth.getSession()
-    const userId = session?.user?.id
     
-    // Step 1: Upload file directly to Supabase Storage from client
-    // This bypasses Vercel's 4.5MB limit entirely
-    console.log('Uploading file directly to Supabase Storage...')
-    const uploadResult = await uploadDirectToStorage({
-      file: request.audioFile,
-      userId
-    })
+    // Upload file through API route using FormData
+    // The API route will use service role key to bypass RLS
+    console.log('Uploading file via API route (bypasses RLS)...')
     
-    if (uploadResult.error) {
-      throw new Error(uploadResult.error)
-    }
-    
-    // Step 2: Send only metadata and storage URL to our API
-    // This payload is tiny (just a few KB)
-    const payload = {
-      audioUrl: uploadResult.publicUrl,
-      audioPath: uploadResult.path,
-      fileName: request.audioFile.name,
-      fileSize: request.audioFile.size,
-      fileType: request.audioFile.type,
-      doctorName: request.doctorName,
-      patientName: request.patientName,
-      documentType: request.documentType
-    }
+    const formData = new FormData()
+    formData.append('audio', request.audioFile)
+    formData.append('doctorName', request.doctorName)
+    formData.append('patientName', request.patientName)
+    formData.append('documentType', request.documentType)
     
     const endpoint = USE_OPTIMIZED_API ? '/api/transcribe-optimized' : '/api/transcribe'
-    const headers: HeadersInit = {
-      'Content-Type': 'application/json'
-    }
+    const headers: HeadersInit = {}
     
     if (session?.access_token) {
       headers['Authorization'] = `Bearer ${session.access_token}`
@@ -77,7 +59,7 @@ export async function submitTranscription(
     const response = await fetch(endpoint, {
       method: 'POST',
       headers,
-      body: JSON.stringify(payload),
+      body: formData, // Send FormData with file
     })
 
     const data = await response.json()
