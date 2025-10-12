@@ -751,19 +751,18 @@ export default function TranscriptionistWorkspace() {
                 </div>
                 
                 <div 
-                  className={`border-2 border-dashed rounded-lg p-4 text-center cursor-pointer transition-colors ${
+                  className={`border-2 border-dashed rounded-lg p-4 text-center cursor-pointer transition-colors relative ${
                     dragActive ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50'
                   } ${selectedFile ? 'bg-primary/5' : ''}`}
                   onDragEnter={handleDrag}
                   onDragLeave={handleDrag}
                   onDragOver={handleDrag}
                   onDrop={handleDrop}
-                  onClick={triggerFileInput}
                 >
                   <input 
                     ref={fileInputRef}
                     type="file" 
-                    className="hidden" 
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" 
                     accept="audio/*,audio/mpeg,audio/wav,audio/webm,audio/ogg,audio/mp4,audio/m4a,.mp3,.wav,.m4a,.ogg,.webm,.mp4"
                     onChange={handleFileSelect}
                   />
