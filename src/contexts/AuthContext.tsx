@@ -142,8 +142,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const resetPassword = async (email: string) => {
     try {
+      // Always use production URL for password reset redirects
+      const redirectUrl = process.env.NODE_ENV === 'production' 
+        ? 'https://healthscribe.pro/reset-password'
+        : `${window.location.origin}/reset-password`
+      
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}/reset-password`,
+        redirectTo: redirectUrl,
       })
 
       if (error) throw error
