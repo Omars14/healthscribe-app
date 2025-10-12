@@ -366,8 +366,8 @@ async function sendToN8NAsync(
       console.log('Status column not available, skipping status update')
     }
     
-    // Get n8n Cloud webhook URL
-    const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL || process.env.NEXT_PUBLIC_N8N_WEBHOOK_URL || 'https://project6.app.n8n.cloud/webhook/medical-transcribe-v2'
+    // Get n8n VPS webhook URL
+    const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL || process.env.NEXT_PUBLIC_N8N_WEBHOOK_URL || 'https://n8n.healthscribe.pro/webhook/medical-transcribe-v2'
     console.log('🔗 N8N webhook URL:', N8N_WEBHOOK_URL)
     console.log('🔗 Environment check:', {
       'N8N_WEBHOOK_URL': process.env.N8N_WEBHOOK_URL ? 'SET' : 'NOT SET',
@@ -376,17 +376,24 @@ async function sendToN8NAsync(
       'VERCEL': process.env.VERCEL ? 'YES' : 'NO'
     })
     
-    // Determine callback URL for production
-    let callbackUrl = `${process.env.NEXT_PUBLIC_SITE_URL || 'https://dashboard-next.vercel.app'}/api/transcription-result-v2`
-    const bypassSecret = process.env.VERCEL_AUTOMATION_BYPASS_SECRET || '4ipofkderor13UDpoR8QzvmpE2WZZC8h'
+    // Determine callback URL - use runtime environment variable (not NEXT_PUBLIC_*)
+    // IMPORTANT: Use regular env vars for server-side runtime values, not NEXT_PUBLIC_*
+    let callbackUrl = process.env.CALLBACK_URL || process.env.URL || 'https://healthscribe.pro'
     
-    if (process.env.VERCEL_URL) {
-      // Add bypass token to allow n8n to access the protected endpoint
-      callbackUrl = `https://${process.env.VERCEL_URL}/api/transcription-result-v2?x-vercel-protection-bypass=${bypassSecret}`
-    } else if (process.env.NODE_ENV === 'production' || process.env.VERCEL) {
-      // Use the main production URL with bypass token
-      callbackUrl = `https://dashboard-next.vercel.app/api/transcription-result-v2?x-vercel-protection-bypass=${bypassSecret}`
+    // Ensure it starts with https:// unless it's localhost
+    if (!callbackUrl.startsWith('http')) {
+      callbackUrl = callbackUrl.includes('localhost') ? `http://${callbackUrl}` : `https://${callbackUrl}`
     }
+    
+    // Add the API endpoint
+    callbackUrl = `${callbackUrl}/api/transcription-result-v2`
+    
+    // For local development, ensure localhost format
+    if (process.env.NODE_ENV === 'development' && !callbackUrl.includes('localhost')) {
+      callbackUrl = `http://localhost:3000/api/transcription-result-v2`
+    }
+    
+    console.log('🔗 Callback URL configured:', callbackUrl)
     
     // Prepare JSON payload for n8n Cloud webhook (send directly, not wrapped)
     const webhookPayload = {
