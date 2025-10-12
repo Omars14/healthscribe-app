@@ -25,7 +25,7 @@ import {
   Send,
   Eye
 } from 'lucide-react'
-// import { supabase } from '@/lib/supabase' // No longer needed - using API routes
+import { supabase } from '@/lib/supabase' // Re-enabled for direct client-side queries
 import { formatFileSize, formatDuration } from '@/lib/transcription-service'
 
 interface Transcription {
@@ -69,9 +69,8 @@ export default function TranscriptionsPage() {
 
   const fetchTranscriptions = async () => {
     try {
-      console.log('🚀 USING API ROUTE: Fetching transcriptions via server-side API...')
+      console.log('🚀 USING DIRECT SUPABASE: Fetching transcriptions via client...')
       console.log('🚀 Current user:', user?.email, 'User ID:', user?.id)
-      console.log('🚀 Session available:', !!session, 'Token available:', !!session?.access_token)
       
       if (!user?.id) {
         console.log('❌ No authenticated user found')
@@ -80,49 +79,34 @@ export default function TranscriptionsPage() {
         return
       }
       
-      if (!session?.access_token) {
-        console.log('❌ No session token available')
-        setTranscriptions([])
-        setLoading(false)
-        return
-      }
+      console.log('🚀 Querying Supabase directly for user:', user.id)
       
-      console.log('🚀 Making HTTP request to /api/transcriptions with auth token')
-      
-      // Use API route instead of direct Supabase query
-      const response = await fetch('/api/transcriptions', {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`
-        },
+      const { data, error } = await supabase
+        .from('transcriptions')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+
+      console.log('🚀 Supabase Response:', {
+        hasData: !!data,
+        count: data?.length,
+        error: error?.message
       })
-      
-      if (!response.ok) {
-        throw new Error(`API request failed: ${response.status} ${response.statusText}`)
+
+      if (error) {
+        console.error('❌ Supabase error:', error)
+        throw error
       }
-      
-      const result = await response.json()
-      console.log('🚀 API Response:', { 
-        success: result.success,
-        count: result.count,
-        hasData: !!result.transcriptions,
-        dataLength: result.transcriptions?.length
-      })
-      
-      if (!result.success) {
-        throw new Error(result.error || 'API request failed')
-      }
-      
+
       // Add computed status based on transcription_text
-      const transcriptionsWithStatus = (result.transcriptions || []).map(t => ({
+      const transcriptionsWithStatus = (data || []).map(t => ({
         ...t,
         status: t.transcription_text && t.transcription_text.trim() !== '' 
           ? 'completed' 
           : 'pending'
       }))
       
-      console.log('🚀 Processed transcriptions:', transcriptionsWithStatus.length, 'records')
+      console.log('✅ Fetched transcriptions:', transcriptionsWithStatus.length, 'records')
       setTranscriptions(transcriptionsWithStatus)
     } catch (error) {
       console.error('❌ Error fetching transcriptions via API:', error)
