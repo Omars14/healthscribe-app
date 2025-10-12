@@ -9,21 +9,59 @@ TempPass2024!
 
 ---
 
-## 👥 **Active Users (Can Login Now):**
+## 👥 **ALL USERS CAN NOW LOGIN (42 Total):**
 
-### **Primary Users:**
-1. **omars14@gmail.com** (Admin) ✅
+### **Administrator:**
+1. **omars14@gmail.com** ✅
    - Role: Administrator
    - Status: Confirmed & Active
    - Transcriptions: 34
 
-2. **test2@healthscribe.pro** (Transcriptionist) ✅
-   - Role: Transcriptionist
-   - Status: Confirmed & Active
-
-3. **test@example.com** (Transcriptionist) ✅
-   - Role: Transcriptionist
-   - Status: Confirmed & Active
+### **Transcriptionists (41 users):**
+All transcriptionist accounts have been created and can login:
+- ✅ abie.c.salameda@gmail.com
+- ✅ angela.oris@gmai.com
+- ✅ angela.oris@gmail.com
+- ✅ angelaoris@gmail.com
+- ✅ angela.oris@gmail.con
+- ✅ aprilceniza.25@gmail.com
+- ✅ arrianebilane@gmail.com
+- ✅ beatriceharpst@gmail.com
+- ✅ bjpapasin@gmail.com
+- ✅ cecilia.deveza@yahoo.com
+- ✅ cydail11@gmail.com
+- ✅ dayapregiemart@gmail.com
+- ✅ ecc02061979@gmail.com
+- ✅ einnoc0608@gmail.com
+- ✅ elainerloria32@gmail.com
+- ✅ elllechar619@yahoo.com
+- ✅ grelyn.sabilano@yahoo.com
+- ✅ harpstalice@gmail.com
+- ✅ ja04041993@gmail.com
+- ✅ jenmaligaya2021@gmail.com
+- ✅ kethkat6@gmail.com
+- ✅ kjamperl@gmail.com
+- ✅ krizarroz0926@gmail.com
+- ✅ lluckyy789@yahoo.com
+- ✅ maildiaz@yahoo.com
+- ✅ malouvendil@gmail.com
+- ✅ markjaysnavarro@gmail.com
+- ✅ maryjanetalde123@gmail.com
+- ✅ **net962mama@gmail.com** (Login Verified!)
+- ✅ norangierossramos@gmail.com
+- ✅ omar@2market.com.au
+- ✅ omar_s14@hotmail.com
+- ✅ ordonez.emmalyn@gmail.com
+- ✅ rrgalvez08@gmail.com
+- ✅ sarahguzman99@yahoo.com
+- ✅ shengmac@gmail.com
+- ✅ sherrymay0487@gmail.com
+- ✅ smsarmiento81@gmail.com
+- ✅ ssajeleven14@gmail.com
+- ✅ test@example.com
+- ✅ test2@healthscribe.pro
+- ✅ wengsumigcay@gmail.com
+- ✅ whiskey0321@gmail.com
 
 ---
 
@@ -83,63 +121,6 @@ TempPass2024!
 
 ---
 
-## 📋 **Additional User Profiles:**
-
-**Note:** The following 41 email addresses have profiles but no authentication yet. 
-If these users need access, they should:
-1. Contact the administrator
-2. Use the "Sign Up" flow with their registered email
-3. Their existing profile will be automatically linked
-
-<details>
-<summary>📧 View Full User Profile List (41 users)</summary>
-
-- abie.c.salameda@gmail.com
-- angela.oris@gmai.com
-- angela.oris@gmail.com
-- angelaoris@gmail.com
-- angela.oris@gmail.con
-- aprilceniza.25@gmail.com
-- arrianebilane@gmail.com
-- beatriceharpst@gmail.com
-- bjpapasin@gmail.com
-- cecilia.deveza@yahoo.com
-- cydail11@gmail.com
-- dayapregiemart@gmail.com
-- ecc02061979@gmail.com
-- einnoc0608@gmail.com
-- elainerloria32@gmail.com
-- elllechar619@yahoo.com
-- grelyn.sabilano@yahoo.com
-- harpstalice@gmail.com
-- ja04041993@gmail.com
-- jenmaligaya2021@gmail.com
-- kethkat6@gmail.com
-- kjamperl@gmail.com
-- krizarroz0926@gmail.com
-- lluckyy789@yahoo.com
-- maildiaz@yahoo.com
-- malouvendil@gmail.com
-- markjaysnavarro@gmail.com
-- maryjanetalde123@gmail.com
-- net962mama@gmail.com
-- norangierossramos@gmail.com
-- omar@2market.com.au
-- omar_s14@hotmail.com
-- ordonez.emmalyn@gmail.com
-- rrgalvez08@gmail.com
-- sarahguzman99@yahoo.com
-- shengmac@gmail.com
-- sherrymay0487@gmail.com
-- smsarmiento81@gmail.com
-- ssajeleven14@gmail.com
-- wengsumigcay@gmail.com
-- whiskey0321@gmail.com
-
-</details>
-
----
-
 ## 🎯 **Next Steps:**
 
 ### **Immediate (Today):**
@@ -172,11 +153,25 @@ If any user has trouble logging in:
 
 ## ✅ **Verification:**
 
-Login was successfully tested on: **October 12, 2025 at 21:43 UTC**
-- Test User: omars14@gmail.com
-- Test Result: ✅ **SUCCESS**
-- Access Token: Generated successfully
-- Session: Active
+### **Test 1 - Admin User:**
+- **Date/Time:** October 12, 2025 at 21:43 UTC
+- **Test User:** omars14@gmail.com
+- **Result:** ✅ **SUCCESS**
+- **Access Token:** Generated successfully
+- **Session:** Active
+
+### **Test 2 - Reported User:**
+- **Date/Time:** October 12, 2025 at 21:54 UTC
+- **Test User:** net962mama@gmail.com
+- **Result:** ✅ **SUCCESS** (After account creation)
+- **Access Token:** Generated successfully
+- **Session:** Active
+
+### **All 42 Users:**
+- **Total Users:** 42
+- **With Auth:** 42
+- **Without Auth:** 0
+- **Status:** ✅ **ALL USERS CAN LOGIN**
 
 ---
 
