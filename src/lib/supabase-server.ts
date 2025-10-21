@@ -1,44 +1,42 @@
 import { createClient } from '@supabase/supabase-js'
+import { getSupabaseServerUrl, getRequired, getOptional } from './env'
 
-// Server-side Supabase client using service role key
-// This bypasses RLS policies and should only be used in server-side code
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || ''
-const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || ''
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-
-// During build time, environment variables might not be available
-// We'll create a dummy client that will be replaced at runtime
-const isDevelopmentOrBuild = process.env.NODE_ENV === 'development' || !supabaseUrl
-
-if (!supabaseUrl && process.env.NODE_ENV === 'production') {
-  console.error('⚠️ Missing SUPABASE_URL environment variable in production')
-}
-
-if (!supabaseServiceRoleKey && process.env.NODE_ENV === 'production') {
-  console.warn('⚠️ Missing SUPABASE_SERVICE_ROLE_KEY - falling back to anon key')
-  console.warn('This may cause RLS policy errors when inserting records')
-}
+// Server-side Supabase client configuration
+const SUPABASE_URL = getSupabaseServerUrl()
+const SUPABASE_ANON_KEY = getRequired('NEXT_PUBLIC_SUPABASE_ANON_KEY')
+const SUPABASE_SERVICE_ROLE_KEY = getOptional('SUPABASE_SERVICE_ROLE_KEY')
 
 // Create server client with service role key (bypasses RLS)
-export const supabaseServer = supabaseUrl ? createClient(
-  supabaseUrl,
-  supabaseServiceRoleKey || supabaseAnonKey,
+export const supabaseServer = createClient(
+  SUPABASE_URL,
+  SUPABASE_ANON_KEY,
   {
     auth: {
       autoRefreshToken: false,
       persistSession: false
     }
   }
-) : null as any
+)
+
+// Create admin client with service role key (for privileged operations)
+export const supabaseAdmin = SUPABASE_SERVICE_ROLE_KEY
+  ? createClient(
+      SUPABASE_URL,
+      SUPABASE_SERVICE_ROLE_KEY,
+      {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false
+        }
+      }
+    )
+  : supabaseServer
 
 // Helper to create a client with user context (respects RLS)
 export const createServerClient = (accessToken?: string) => {
-  if (!supabaseUrl || !supabaseAnonKey) {
-    return null as any
-  }
   return createClient(
-    supabaseUrl,
-    supabaseAnonKey,
+    SUPABASE_URL,
+    SUPABASE_ANON_KEY,
     {
       auth: {
         autoRefreshToken: false,
