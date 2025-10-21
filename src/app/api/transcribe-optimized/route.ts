@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabaseServer, createServerClient } from '@/lib/supabase-server'
+import { supabaseServer, supabaseAdmin, createServerClient } from '@/lib/supabase-server'
 import { cookies } from 'next/headers'
 import { v4 as uuidv4 } from 'uuid'
 
@@ -186,8 +186,12 @@ async function uploadAudioToStorage(file: File, userId: string | null): Promise<
     const arrayBuffer = await file.arrayBuffer()
     const buffer = Buffer.from(arrayBuffer)
     
+    // Use supabaseAdmin to bypass RLS policies on storage
+    const client = supabaseAdmin || supabaseServer
+    console.log('🔑 Using admin client for storage upload (bypasses RLS)')
+    
     // Upload to Supabase Storage
-    const { data, error } = await supabaseServer.storage
+    const { data, error } = await client.storage
       .from('audio-files')
       .upload(filePath, buffer, {
         contentType: file.type || 'audio/mpeg',
@@ -227,7 +231,7 @@ async function uploadAudioToStorage(file: File, userId: string | null): Promise<
     }
     
     // Get public URL for the uploaded file
-    const { data: { publicUrl } } = supabaseServer.storage
+    const { data: { publicUrl } } = client.storage
       .from('audio-files')
       .getPublicUrl(filePath)
     

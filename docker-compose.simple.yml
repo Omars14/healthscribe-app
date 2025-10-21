@@ -1,0 +1,100 @@
+name: healthscribe
+
+services:
+  app:
+    image: healthscribe/app:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+        NEXT_PUBLIC_N8N_URL: ${NEXT_PUBLIC_N8N_URL}
+        NEXT_PUBLIC_N8N_WEBHOOK_URL: ${NEXT_PUBLIC_N8N_WEBHOOK_URL}
+        NEXT_PUBLIC_URL: ${NEXT_PUBLIC_URL}
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+        NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL}
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - N8N_WEBHOOK_URL=${N8N_WEBHOOK_URL}
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - n8n
+      - redis
+    expose:
+      - "3000"
+    networks:
+      - internal
+    restart: unless-stopped
+
+  n8n:
+    image: n8nio/n8n:latest
+    env_file:
+      - .env
+    environment:
+      - N8N_HOST=${N8N_HOST}
+      - N8N_PROTOCOL=https
+      - N8N_PORT=5678
+      - WEBHOOK_URL=${N8N_WEBHOOK_URL:-https://${N8N_HOST}}
+      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
+      - DB_TYPE=sqlite
+      - EXECUTIONS_DATA_SAVE_ON_ERROR=all
+      - EXECUTIONS_DATA_SAVE_ON_SUCCESS=none
+      - N8N_EDITOR_BASE_URL=https://${N8N_HOST}
+    volumes:
+      - n8n-data:/home/node/.n8n
+    expose:
+      - "5678"
+    networks:
+      - internal
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    expose:
+      - "6379"
+    networks:
+      - internal
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:latest
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - /opt/healthscribe/certs/letsencrypt:/certs/letsencrypt:ro
+      - ./certbot-webroot:/var/www/certbot
+    depends_on:
+      - app
+      - n8n
+    networks:
+      - internal
+    restart: unless-stopped
+
+  certbot:
+    image: certbot/certbot:latest
+    volumes:
+      - ./letsencrypt:/etc/letsencrypt
+      - ./certbot-webroot:/var/www/certbot
+    command: certonly --webroot -w /var/www/certbot --non-interactive --agree-tos --email admin@healthscribe.pro -d www.healthscribe.pro -d n8n.healthscribe.pro
+    networks:
+      - internal
+    restart: "no"
+
+volumes:
+  n8n-data:
+  redis-data:
+
+networks:
+  internal:
+    driver: bridge

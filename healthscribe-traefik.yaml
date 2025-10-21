@@ -1,80 +1,79 @@
 http:
   routers:
-    supabase-auth:
-      rule: "Host(`supabase.healthscribe.pro`) && PathPrefix(`/auth/v1`)"
-      service: supabase-auth
+    supabase-http:
+      rule: "Host(`supabase.healthscribe.pro`)"
+      service: supabase-backend
       entryPoints:
-        - https
+        - web
+      middlewares:
+        - redirect-https
+
+    supabase-websecure:
+      rule: "Host(`supabase.healthscribe.pro`)"
+      service: supabase-backend
+      entryPoints:
+        - websecure
       middlewares:
         - cors-headers
       tls:
-        certResolver: letsencrypt
+        certResolver: le
 
-    supabase-rest:
-      rule: "Host(`supabase.healthscribe.pro`) && PathPrefix(`/rest/v1`)"
-      service: supabase-rest
-      entryPoints:
-        - https
-      middlewares:
-        - cors-headers
-      tls:
-        certResolver: letsencrypt
-
-    supabase-storage:
-      rule: "Host(`supabase.healthscribe.pro`) && PathPrefix(`/storage/v1`)"
-      service: supabase-storage
-      entryPoints:
-        - https
-      middlewares:
-        - cors-headers
-      tls:
-        certResolver: letsencrypt
-
-    n8n-webhook:
+    n8n-http:
       rule: "Host(`n8n.healthscribe.pro`)"
       service: n8n
       entryPoints:
-        - https
+        - web
+      middlewares:
+        - redirect-https
+
+    n8n-websecure:
+      rule: "Host(`n8n.healthscribe.pro`)"
+      service: n8n
+      entryPoints:
+        - websecure
       middlewares:
         - cors-headers
       tls:
-        certResolver: letsencrypt
+        certResolver: le
 
-    healthscribe-main:
+    healthscribe-http:
       rule: "Host(`healthscribe.pro`) || Host(`www.healthscribe.pro`)"
       service: healthscribe-app
       entryPoints:
-        - https
+        - web
+      middlewares:
+        - redirect-https
+
+    healthscribe-websecure:
+      rule: "Host(`healthscribe.pro`) || Host(`www.healthscribe.pro`)"
+      service: healthscribe-app
+      entryPoints:
+        - websecure
       tls:
-        certResolver: letsencrypt
+        certResolver: le
 
   services:
-    supabase-auth:
+    supabase-backend:
       loadBalancer:
         servers:
-          - url: "http://10.0.3.8:9999"
-
-    supabase-rest:
-      loadBalancer:
-        servers:
-          - url: "http://10.0.3.7:3000"
-
-    supabase-storage:
-      loadBalancer:
-        servers:
-          - url: "http://10.0.3.9:5000"
+          - url: "http://supabase-kong:8000"
 
     n8n:
       loadBalancer:
         servers:
-          - url: "http://10.0.1.6:5678"
+          - url: "http://n8n:5678"
 
     healthscribe-app:
       loadBalancer:
         servers:
-          - url: "http://10.0.1.8:3000"
+          - url: "http://app:3000"
 
   middlewares:
+    redirect-https:
+      redirectScheme:
+        scheme: https
+        permanent: true
+
     cors-headers:
       headers:
         accessControlAllowMethods:
@@ -87,6 +86,7 @@ http:
         accessControlAllowOriginList:
           - "https://healthscribe.pro"
           - "https://www.healthscribe.pro"
+          - "https://supabase.healthscribe.pro"
         accessControlAllowHeaders:
           - "*"
         accessControlExposeHeaders:
