@@ -1,2 +1,2 @@
-import Page from '../../app/about/page'
+import Page from '@/app/about/page'
 export default Page
