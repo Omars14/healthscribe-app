@@ -7,8 +7,11 @@ export async function middleware(req: NextRequest) {
     // The AuthProvider will redirect if not authenticated
     return NextResponse.next()
   } catch (error) {
-    // Catch any middleware errors to prevent unhandled exceptions
-    console.error('Middleware error:', error)
+    // Silently catch middleware errors to prevent unhandled exceptions
+    // This prevents noise from browser extension connection attempts
+    if (process.env.NODE_ENV === 'development') {
+      console.debug('Middleware error (suppressed):', error)
+    }
     return NextResponse.next()
   }
 }
