@@ -8,10 +8,17 @@ export const runtime = 'nodejs'
 export const maxDuration = 300 // 5 minutes timeout for large uploads
 
 export async function POST(request: NextRequest) {
+  const startTime = Date.now()
+  console.log('\n=== TRANSCRIBE OPTIMIZED API START ===')
+  console.log('📋 Environment check:')
+  console.log('  - NEXT_PUBLIC_SUPABASE_URL:', process.env.NEXT_PUBLIC_SUPABASE_URL ? '✓' : '✗')
+  console.log('  - SUPABASE_SERVICE_ROLE_KEY:', process.env.SUPABASE_SERVICE_ROLE_KEY ? '✓' : '✗')
+  
   try {
     // Check Content-Type to handle both JSON and FormData
     const contentType = request.headers.get('content-type')
     const isJson = contentType?.includes('application/json')
+    console.log('📨 Request content-type:', contentType, '| isJson:', isJson)
     
     // Get authorization header if present
     const authHeader = request.headers.get('authorization')
@@ -19,18 +26,19 @@ export async function POST(request: NextRequest) {
     
     if (authHeader && authHeader.startsWith('Bearer ')) {
       const token = authHeader.substring(7)
+      console.log('🔐 Auth token present, verifying...')
       
       // Verify the token and get user using server client
       const { data: { user }, error } = await supabaseServer.auth.getUser(token)
       
       if (user && !error) {
         userId = user.id
-        console.log('Authenticated user for upload:', user.email, 'ID:', userId)
+        console.log('✅ Authenticated user:', user.email, '| User ID:', userId)
       } else {
-        console.log('Auth error:', error?.message)
+        console.log('❌ Auth error:', error?.message)
       }
     } else {
-      console.log('No auth header provided, creating transcription without user_id')
+      console.log('⚠️ No auth header provided, creating transcription without user_id')
     }
     
     let audioUrl: string
@@ -164,11 +172,24 @@ export async function POST(request: NextRequest) {
     })
     
   } catch (error) {
-    console.error('Transcription API error:', error)
+    const duration = Date.now() - startTime
+    console.error('\n❌ TRANSCRIBE OPTIMIZED API FAILED')
+    console.error('  Duration:', duration + 'ms')
+    console.error('  Error:', error instanceof Error ? error.message : String(error))
+    console.error('  Stack:', error instanceof Error ? error.stack : 'N/A')
+    console.log('=== TRANSCRIBE OPTIMIZED API END (ERROR) ===')
     return NextResponse.json(
-      { error: 'Internal server error', details: error instanceof Error ? error.message : 'Unknown error' },
+      { 
+        error: 'Internal server error', 
+        details: error instanceof Error ? error.message : 'Unknown error',
+        timestamp: new Date().toISOString()
+      },
       { status: 500 }
     )
+  } finally {
+    const duration = Date.now() - startTime
+    console.log('\n⏱️ API Duration:', duration + 'ms')
+    console.log('=== TRANSCRIBE OPTIMIZED API END ===')
   }
 }
 
@@ -180,21 +201,33 @@ async function uploadAudioToStorage(file: File, userId: string | null): Promise<
     const fileName = `${timestamp}-${uuidv4()}.${fileExt}`
     const filePath = userId ? `${userId}/${fileName}` : `anonymous/${fileName}`
     
-    console.log('📤 Uploading audio via direct HTTP to Supabase Storage...', filePath)
+    console.log('📤 Step 3a: Uploading audio via HTTP to Supabase Storage...')
+    console.log('  - File:', fileName)
+    console.log('  - Path:', filePath)
+    console.log('  - Size:', file.size, 'bytes')
     
     // Convert file to buffer
     const arrayBuffer = await file.arrayBuffer()
     const buffer = Buffer.from(arrayBuffer)
+    console.log('  - Buffer created, size:', buffer.length)
     
     // Get Supabase configuration
     const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL
     const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
     
+    console.log('🔑 Checking credentials:')
+    console.log('  - SUPABASE_URL configured:', !!SUPABASE_URL)
+    console.log('  - SERVICE_ROLE_KEY configured:', !!SUPABASE_SERVICE_ROLE_KEY)
+    
     if (!SUPABASE_URL) {
       throw new Error('SUPABASE_URL not configured')
     }
     
-    console.log('🔑 Using direct HTTP with service role key (bypasses SDK RLS validation)')
+    if (!SUPABASE_SERVICE_ROLE_KEY) {
+      throw new Error('SUPABASE_SERVICE_ROLE_KEY not configured - cannot upload to storage')
+    }
+    
+    console.log('✅ Credentials verified, proceeding with HTTP upload')
     
     // Use direct HTTP request instead of SDK to bypass RLS validation issue
     // This is a workaround for a known issue with @supabase/supabase-js client
