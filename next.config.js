@@ -104,6 +104,8 @@ const nextConfig = {
       ? `dev-${Date.now()}` 
       : 'production-build'
   },
+  
+  // Simple build configuration for VPS deployment
 }
 
 module.exports = nextConfig
