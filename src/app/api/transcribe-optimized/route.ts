@@ -420,8 +420,14 @@ async function sendToN8NAsync(
       console.log('Status column not available, skipping status update')
     }
     
-    // Get n8n VPS webhook URL
-    const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL || process.env.NEXT_PUBLIC_N8N_WEBHOOK_URL || 'https://n8n.healthscribe.pro/webhook/medical-transcribe-v2'
+    // Get n8n VPS webhook URL with full workflow endpoint
+    // Build complete webhook URL: base + workflow path
+    let N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL || 'https://n8n.healthscribe.pro'
+    
+    // If URL doesn't include /webhook path, add the workflow endpoint
+    if (!N8N_WEBHOOK_URL.includes('/webhook')) {
+      N8N_WEBHOOK_URL = `${N8N_WEBHOOK_URL}/webhook/medical-transcribe-v2`
+    }
     console.log('🔗 N8N webhook URL:', N8N_WEBHOOK_URL)
     console.log('🔗 Environment check:', {
       'N8N_WEBHOOK_URL': process.env.N8N_WEBHOOK_URL ? 'SET' : 'NOT SET',
