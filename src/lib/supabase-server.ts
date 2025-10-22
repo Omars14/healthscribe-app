@@ -19,18 +19,30 @@ export const supabaseServer = createClient(
 )
 
 // Create admin client with service role key (for privileged operations)
+console.log('🔧 Supabase Server Config:', {
+  url: SUPABASE_URL ? 'SET' : 'MISSING',
+  anonKey: SUPABASE_ANON_KEY ? 'SET' : 'MISSING',
+  serviceRoleKey: SUPABASE_SERVICE_ROLE_KEY ? 'SET' : 'MISSING'
+})
+
 export const supabaseAdmin = SUPABASE_SERVICE_ROLE_KEY
-  ? createClient(
-      SUPABASE_URL,
-      SUPABASE_SERVICE_ROLE_KEY,
-      {
-        auth: {
-          autoRefreshToken: false,
-          persistSession: false
+  ? (() => {
+      console.log('✅ Creating supabaseAdmin with service role key')
+      return createClient(
+        SUPABASE_URL,
+        SUPABASE_SERVICE_ROLE_KEY,
+        {
+          auth: {
+            autoRefreshToken: false,
+            persistSession: false
+          }
         }
-      }
-    )
-  : supabaseServer
+      )
+    })()
+  : (() => {
+      console.log('⚠️  No service role key found, using regular server client for admin operations')
+      return supabaseServer
+    })()
 
 // Helper to create a client with user context (respects RLS)
 export const createServerClient = (accessToken?: string) => {

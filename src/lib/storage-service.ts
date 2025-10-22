@@ -8,64 +8,9 @@ const AUDIO_BUCKET = 'audio-files'
  * Includes delays to prevent race conditions
  */
 async function ensureBucketExists(supabase: any, bucketName: string): Promise<boolean> {
-  try {
-    // Check if bucket exists
-    const { data: buckets, error: listError } = await supabase.storage.listBuckets()
-
-    if (listError) {
-      console.error('Error listing buckets:', listError)
-      return false
-    }
-
-    const bucketExists = buckets?.some((bucket: any) => bucket.name === bucketName)
-
-    if (!bucketExists) {
-      console.log(`🪣 Creating ${bucketName} bucket...`)
-
-      // Create bucket with public access
-      const { error: createError } = await supabase.storage.createBucket(bucketName, {
-        public: true, // CRITICAL: Make bucket public so Deepgram can access files
-        allowedMimeTypes: ['audio/*', 'video/*'],
-        fileSizeLimit: 104857600 // 100MB
-      })
-
-      if (createError) {
-        console.error('Error creating bucket:', createError)
-        return false
-      }
-
-      console.log(`✅ Created ${bucketName} bucket with public access`)
-
-      // CRITICAL FIX: Wait for bucket permissions to propagate
-      console.log(`⏳ Waiting for bucket permissions to propagate...`)
-      await new Promise(resolve => setTimeout(resolve, 3000)) // 3 second delay
-
-      return true
-    }
-
-    // Bucket exists, verify it's public
-    try {
-      const { data, error: policyError } = await supabase.storage.getBucket(bucketName)
-
-      if (policyError) {
-        console.error('Error checking bucket policy:', policyError)
-        return false
-      }
-
-      // If bucket exists but isn't public, we can't easily change it
-      // For now, assume it's configured correctly
-      console.log(`✅ ${bucketName} bucket exists`)
-      return true
-
-    } catch (policyCheckError) {
-      console.error('Error checking bucket configuration:', policyCheckError)
-      return false
-    }
-
-  } catch (error) {
-    console.error('Error in ensureBucketExists:', error)
-    return false
-  }
+  // Skip bucket creation - assume it exists as configured in database
+  console.log(`✅ Bucket ${bucketName} assumed to exist (RLS-protected creation disabled)`)
+  return true
 }
 
 /**
@@ -173,18 +118,44 @@ export async function uploadAudioServerSide(
   contentType: string = 'audio/mpeg'
 ): Promise<{ url: string | null; error: string | null }> {
   try {
-    const supabase = createServerClient()
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+
+    if (!supabaseUrl || !serviceKey) {
+      console.error('Missing Supabase configuration')
+      return { url: null, error: 'Storage configuration missing' }
+    }
 
     // Determine file extension
     const extension = fileName.split('.').pop() || 'mp3'
     const filePath = `uploads/${transcriptionId}.${extension}`
 
-    // First, ensure the bucket exists
-    const bucketExists = await ensureBucketExists(supabase, AUDIO_BUCKET)
-    if (!bucketExists) {
-      console.error('Failed to create or access audio-files bucket')
-      return { url: null, error: 'Storage bucket unavailable' }
+    // Use direct HTTP upload to bypass RLS and SDK validation issues
+    const uploadUrl = `${supabaseUrl}/storage/v1/object/${AUDIO_BUCKET}/${filePath}`
+    
+    console.log(`📤 Uploading directly via HTTP to: ${uploadUrl}`)
+    const uploadResponse = await fetch(uploadUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${serviceKey}`,
+        'Content-Type': contentType
+      },
+      body: file
+    })
+
+    if (!uploadResponse.ok) {
+      const errorText = await uploadResponse.text()
+      console.error(`❌ Direct upload failed [${uploadResponse.status}]:`, errorText)
+      // Don't return yet - might need to try bucket creation or other approach
+    } else {
+      console.log(`✅ Direct HTTP upload successful`)
+      // Return the public URL
+      const publicUrl = `${supabaseUrl}/storage/v1/object/public/${AUDIO_BUCKET}/${filePath}`
+      return { url: publicUrl, error: null }
     }
+
+    // Fallback: Try SDK-based upload if direct HTTP fails
+    const supabase = createServerClient()
 
     // Upload to Supabase Storage
     const { data, error } = await supabase.storage

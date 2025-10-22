@@ -180,60 +180,44 @@ async function uploadAudioToStorage(file: File, userId: string | null): Promise<
     const fileName = `${timestamp}-${uuidv4()}.${fileExt}`
     const filePath = userId ? `${userId}/${fileName}` : `anonymous/${fileName}`
     
-    console.log('📤 Uploading audio to Supabase Storage:', filePath)
+    console.log('📤 Uploading audio via direct HTTP to Supabase Storage...', filePath)
     
     // Convert file to buffer
     const arrayBuffer = await file.arrayBuffer()
     const buffer = Buffer.from(arrayBuffer)
     
-    // Use supabaseAdmin to bypass RLS policies on storage
-    const client = supabaseAdmin || supabaseServer
-    console.log('🔑 Using admin client for storage upload (bypasses RLS)')
+    // Get Supabase configuration
+    const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL
+    const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
     
-    // Upload to Supabase Storage
-    const { data, error } = await client.storage
-      .from('audio-files')
-      .upload(filePath, buffer, {
-        contentType: file.type || 'audio/mpeg',
-        upsert: false
-      })
-    
-    if (error) {
-      console.error('❌ Storage upload error:', error)
-      // Try to create bucket if it doesn't exist
-      if (error.message?.includes('bucket') || error.message?.includes('not found')) {
-        console.log('🪣 Creating audio-files bucket...')
-        const { error: bucketError } = await supabaseServer.storage
-          .createBucket('audio-files', {
-            public: false,
-            allowedMimeTypes: ['audio/*'],
-            fileSizeLimit: 52428800 // 50MB
-          })
-        
-        if (!bucketError || bucketError.message?.includes('already exists')) {
-          // Retry upload
-          const retryResult = await supabaseServer.storage
-            .from('audio-files')
-            .upload(filePath, buffer, {
-              contentType: file.type || 'audio/mpeg',
-              upsert: false
-            })
-          
-          if (retryResult.error) {
-            throw retryResult.error
-          }
-        } else {
-          throw bucketError
-        }
-      } else {
-        throw error
-      }
+    if (!SUPABASE_URL) {
+      throw new Error('SUPABASE_URL not configured')
     }
     
-    // Get public URL for the uploaded file
-    const { data: { publicUrl } } = client.storage
-      .from('audio-files')
-      .getPublicUrl(filePath)
+    console.log('🔑 Using direct HTTP with service role key (bypasses SDK RLS validation)')
+    
+    // Use direct HTTP request instead of SDK to bypass RLS validation issue
+    // This is a workaround for a known issue with @supabase/supabase-js client
+    const uploadUrl = `${SUPABASE_URL}/storage/v1/object/audio-files/${filePath}`
+    console.log('📍 Upload URL:', uploadUrl.replace(SUPABASE_SERVICE_ROLE_KEY || '', '[KEY_REDACTED]'))
+    
+    const uploadResponse = await fetch(uploadUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+        'Content-Type': file.type || 'audio/mpeg'
+      },
+      body: buffer
+    })
+    
+    if (!uploadResponse.ok) {
+      const errorText = await uploadResponse.text()
+      console.error(`❌ HTTP upload failed [${uploadResponse.status}]:`, errorText)
+      throw new Error(`Upload failed: HTTP ${uploadResponse.status} - ${errorText}`)
+    }
+    
+    // Construct public URL
+    const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/audio-files/${filePath}`
     
     console.log('✅ Audio uploaded successfully:', publicUrl)
     
