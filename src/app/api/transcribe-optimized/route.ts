@@ -420,21 +420,20 @@ async function sendToN8NAsync(
       console.log('Status column not available, skipping status update')
     }
     
-    // Get n8n VPS webhook URL with full workflow endpoint
-    // Build complete webhook URL: base + workflow path
-    let N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL || 'https://n8n.healthscribe.pro'
+    // Get n8n VPS webhook URL - MUST include full workflow path
+    // Expected format: https://n8n.healthscribe.pro/webhook/medical-transcribe-v2
+    const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL || process.env.NEXT_PUBLIC_N8N_WEBHOOK_URL
     
-    // If URL doesn't include /webhook path, add the workflow endpoint
-    if (!N8N_WEBHOOK_URL.includes('/webhook')) {
-      N8N_WEBHOOK_URL = `${N8N_WEBHOOK_URL}/webhook/medical-transcribe-v2`
+    if (!N8N_WEBHOOK_URL) {
+      throw new Error('N8N_WEBHOOK_URL or NEXT_PUBLIC_N8N_WEBHOOK_URL environment variable not set')
     }
-    console.log('🔗 N8N webhook URL:', N8N_WEBHOOK_URL)
-    console.log('🔗 Environment check:', {
-      'N8N_WEBHOOK_URL': process.env.N8N_WEBHOOK_URL ? 'SET' : 'NOT SET',
-      'NEXT_PUBLIC_N8N_WEBHOOK_URL': process.env.NEXT_PUBLIC_N8N_WEBHOOK_URL ? 'SET' : 'NOT SET',
-      'NODE_ENV': process.env.NODE_ENV,
-      'VERCEL': process.env.VERCEL ? 'YES' : 'NO'
-    })
+    
+    // Validate URL includes webhook path
+    if (!N8N_WEBHOOK_URL.includes('/webhook/')) {
+      throw new Error(`Invalid N8N_WEBHOOK_URL: ${N8N_WEBHOOK_URL}. Must include full webhook path like /webhook/medical-transcribe-v2`)
+    }
+    console.log('🔗 N8N webhook URL configured:', N8N_WEBHOOK_URL)
+    console.log('🔗 Webhook endpoint verified: includes /webhook/ path')
     
     // Determine callback URL - use runtime environment variable (not NEXT_PUBLIC_*)
     // IMPORTANT: Use regular env vars for server-side runtime values, not NEXT_PUBLIC_*
