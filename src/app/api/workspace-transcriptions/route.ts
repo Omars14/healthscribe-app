@@ -8,11 +8,20 @@ export async function GET(request: Request) {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
     const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || ''
     
-    if (!supabaseUrl || !supabaseServiceKey) {
-      console.error('❌ Workspace API: Missing environment variables')
+    // Enhanced validation with detailed error messages
+    if (!supabaseUrl) {
+      console.error('❌ Workspace API: NEXT_PUBLIC_SUPABASE_URL not set')
       return NextResponse.json({ 
         success: false, 
-        error: 'Server configuration error'
+        error: 'NEXT_PUBLIC_SUPABASE_URL not configured'
+      }, { status: 500 })
+    }
+
+    if (!supabaseServiceKey) {
+      console.error('❌ Workspace API: SUPABASE_SERVICE_ROLE_KEY not set')
+      return NextResponse.json({ 
+        success: false, 
+        error: 'SUPABASE_SERVICE_ROLE_KEY not configured. Required for server-side API access.'
       }, { status: 500 })
     }
     

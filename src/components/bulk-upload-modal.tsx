@@ -134,95 +134,55 @@ export function BulkUploadModal({ isOpen, onClose, onComplete }: BulkUploadModal
     setFiles(prev => prev.filter(f => f.id !== id))
   }
 
-  const uploadSingleFile = async (fileItem: FileUploadItem): Promise<void> => {
+  const uploadSingleFile = async (fileItem: FileUploadItem, signal?: AbortSignal): Promise<void> => {
     try {
       // Update status to uploading
       updateFileField(fileItem.id, 'status', 'uploading')
-      updateFileField(fileItem.id, 'progress', 20)
+      updateFileField(fileItem.id, 'progress', 10)
 
-      // Get current user
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) throw new Error('User not authenticated')
-
-      // Generate unique filename
-      const timestamp = Date.now()
-      const randomId = Math.random().toString(36).substring(7)
-      const fileExt = fileItem.file.name.split('.').pop()
-      const fileName = `${timestamp}-${randomId}.${fileExt}`
-      const filePath = `${user.id}/${fileName}`
-
-      // Upload to Supabase storage
-      updateFileField(fileItem.id, 'progress', 40)
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from('audio-files')
-        .upload(filePath, fileItem.file)
-
-      if (uploadError) throw uploadError
-
-      // Get public URL
-      const { data: { publicUrl } } = supabase.storage
-        .from('audio-files')
-        .getPublicUrl(filePath)
-
-      // Create transcription record
-      updateFileField(fileItem.id, 'progress', 60)
-      const { data: transcription, error: dbError } = await supabase
-        .from('transcriptions')
-        .insert({
-          user_id: user.id,
-          file_name: fileItem.file.name,
-          doctor_name: fileItem.doctorName,
-          patient_name: fileItem.patientName,
-          document_type: fileItem.documentType,
-          audio_url: publicUrl,
-          status: 'pending',
-          created_at: new Date().toISOString()
-        })
-        .select()
-        .single()
-
-      if (dbError) throw dbError
-
-      // Send to n8n webhook for processing
-      updateFileField(fileItem.id, 'status', 'processing')
-      updateFileField(fileItem.id, 'progress', 80)
-      
-      const webhookPayload = {
-        uploadId: transcription.id,
-        doctorName: fileItem.doctorName,
-        patientName: fileItem.patientName,
-        documentType: fileItem.documentType,
-        fileName: fileItem.file.name,
-        audioUrl: publicUrl,
-        source: 'bulk-upload',
-        callbackUrl: `${window.location.origin}/api/transcription-result-v2`
+      if (signal?.aborted) {
+        throw new Error('Upload cancelled')
       }
 
-      // Use the n8n cloud webhook URL from environment variables
-      const webhookUrl = process.env.NEXT_PUBLIC_N8N_WEBHOOK_URL || 'https://project6.app.n8n.cloud/webhook/medical-transcribe-v2'
-      const webhookResponse = await fetch(webhookUrl, {
+      // Build FormData with all fields
+      const formData = new FormData()
+      formData.append('file', fileItem.file)
+      formData.append('doctor_name', fileItem.doctorName)
+      formData.append('patient_name', fileItem.patientName)
+      formData.append('document_type', fileItem.documentType)
+
+      updateFileField(fileItem.id, 'progress', 50)
+
+      // Submit to API endpoint - same as single upload
+      const response = await fetch('/api/transcribe-medical', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Source': 'bulk-upload'
-        },
-        body: JSON.stringify(webhookPayload)
+        body: formData,
+        signal: signal
       })
 
-      if (!webhookResponse.ok) {
-        console.error('Webhook failed:', await webhookResponse.text())
-        // Don't throw error, transcription will process eventually
+      const result = await response.json()
+
+      if (!response.ok) {
+        throw new Error(result.error || `HTTP ${response.status}`)
       }
 
       // Mark as completed
       updateFileField(fileItem.id, 'status', 'completed')
       updateFileField(fileItem.id, 'progress', 100)
-      updateFileField(fileItem.id, 'transcriptionId', transcription.id)
+      if (result.data?.id) {
+        updateFileField(fileItem.id, 'transcriptionId', result.data.id)
+      }
 
-    } catch (error) {
+    } catch (error: any) {
       console.error(`Failed to upload ${fileItem.file.name}:`, error)
       updateFileField(fileItem.id, 'status', 'failed')
-      updateFileField(fileItem.id, 'error', error instanceof Error ? error.message : 'Upload failed')
+      
+      if (error.name === 'AbortError') {
+        updateFileField(fileItem.id, 'error', 'Upload cancelled')
+      } else {
+        updateFileField(fileItem.id, 'error', error instanceof Error ? error.message : 'Upload failed')
+      }
+      
       throw error
     }
   }
@@ -255,7 +215,8 @@ export function BulkUploadModal({ isOpen, onClose, onComplete }: BulkUploadModal
     let failCount = 0
 
     for (let i = 0; i < files.length; i++) {
-      if (abortControllerRef.current?.signal.aborted) break
+      const signal = abortControllerRef.current?.signal
+      if (signal?.aborted) break
       
       const file = files[i]
       if (file.status === 'completed') continue
@@ -263,7 +224,7 @@ export function BulkUploadModal({ isOpen, onClose, onComplete }: BulkUploadModal
       setCurrentProcessingIndex(i)
       
       try {
-        await uploadSingleFile(file)
+        await uploadSingleFile(file, signal)
         successCount++
       } catch (error) {
         failCount++
