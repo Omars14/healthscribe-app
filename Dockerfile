@@ -52,17 +52,13 @@ COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/.next/static ./.next/static
 
-# Create a startup wrapper that forces 0.0.0.0 binding (do this as root before USER nextjs)
-RUN echo '#!/bin/sh' > /app/start.sh && \
-    echo 'exec node -e "process.env.HOSTNAME=\"0.0.0.0\"; const fs=require(\"fs\"); eval(fs.readFileSync(\"./server.js\",\"utf8\"));"' >> /app/start.sh && \
-    chmod +x /app/start.sh
-
 USER nextjs
 EXPOSE 3000
+ENV HOSTNAME="0.0.0.0"
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     CMD wget -qO- http://127.0.0.1:3000 || exit 1
 
-# Use the wrapper script instead of node directly
-CMD ["/app/start.sh"]
+# Start standalone server directly (no eval needed - security fix)
+CMD ["node", "server.js"]
