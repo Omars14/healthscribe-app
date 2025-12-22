@@ -2,6 +2,13 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServer, supabaseAdmin, createServerClient } from '@/lib/supabase-server'
 import { cookies } from 'next/headers'
 import { v4 as uuidv4 } from 'uuid'
+import { exec } from 'child_process'
+import { promisify } from 'util'
+import { writeFile, unlink, readFile } from 'fs/promises'
+import { tmpdir } from 'os'
+import { join } from 'path'
+
+const execAsync = promisify(exec)
 
 // Configure runtime for large file uploads
 export const runtime = 'nodejs'
@@ -193,34 +200,169 @@ export async function POST(request: NextRequest) {
   }
 }
 
+// Get proper MIME type for audio files based on extension
+function getAudioMimeType(fileName: string, providedType?: string): string {
+  const ext = fileName.split('.').pop()?.toLowerCase() || ''
+  const mimeTypes: Record<string, string> = {
+    'mp3': 'audio/mpeg',
+    'wav': 'audio/wav',
+    'm4a': 'audio/mp4',
+    'aac': 'audio/aac',
+    'ogg': 'audio/ogg',
+    'opus': 'audio/opus',
+    'webm': 'audio/webm',
+    'flac': 'audio/flac',
+    'amr': 'audio/amr',
+    '3gp': 'audio/3gpp',
+    'mp4': 'audio/mp4'
+  }
+  
+  // If we have a valid MIME type provided, use it (unless it's generic)
+  if (providedType && providedType.startsWith('audio/') && providedType !== 'audio/mpeg') {
+    return providedType
+  }
+  
+  // Otherwise, determine from extension
+  return mimeTypes[ext] || providedType || 'audio/mpeg'
+}
+
+/**
+ * Check if WAV file is in a browser-incompatible format (like IMA ADPCM)
+ * and convert to MP3 if needed using ffmpeg
+ */
+async function convertAudioIfNeeded(buffer: Buffer, fileName: string): Promise<{ buffer: Buffer; fileName: string; contentType: string }> {
+  const ext = fileName.split('.').pop()?.toLowerCase()
+  
+  // Only process WAV files
+  if (ext !== 'wav') {
+    return { buffer, fileName, contentType: getAudioMimeType(fileName) }
+  }
+  
+  // Check WAV format code at offset 20-21 (little-endian)
+  // 0x0001 = PCM (browser compatible)
+  // 0x0011 = IMA ADPCM (not browser compatible)
+  // 0x0055 = MP3 (browser compatible)
+  if (buffer.length < 22) {
+    console.log('⚠️ WAV file too small to check format')
+    return { buffer, fileName, contentType: 'audio/wav' }
+  }
+  
+  // Find "fmt " chunk and read format code
+  const fmtIndex = buffer.indexOf('fmt ')
+  if (fmtIndex === -1) {
+    console.log('⚠️ No fmt chunk found in WAV')
+    return { buffer, fileName, contentType: 'audio/wav' }
+  }
+  
+  const formatCode = buffer.readUInt16LE(fmtIndex + 8)
+  console.log(`🔍 WAV format code: 0x${formatCode.toString(16).padStart(4, '0')} (${formatCode})`)
+  
+  // PCM (1) and other common formats are browser-compatible
+  if (formatCode === 1 || formatCode === 3) {
+    console.log('✅ WAV is PCM format - browser compatible')
+    return { buffer, fileName, contentType: 'audio/wav' }
+  }
+  
+  // IMA ADPCM (17) and other compressed formats need conversion
+  console.log('⚠️ WAV is in compressed format - converting to MP3 for browser playback')
+  
+  try {
+    // Write to temp file
+    const tempId = uuidv4()
+    const inputPath = join(tmpdir(), `input-${tempId}.wav`)
+    const outputPath = join(tmpdir(), `output-${tempId}.mp3`)
+    
+    await writeFile(inputPath, buffer)
+    console.log(`📝 Temp input file: ${inputPath}`)
+    
+    // Convert using ffmpeg
+    const ffmpegCmd = `ffmpeg -i "${inputPath}" -acodec libmp3lame -ab 128k -ar 44100 "${outputPath}" -y`
+    console.log(`🔄 Converting with ffmpeg...`)
+    
+    try {
+      const { stdout, stderr } = await execAsync(ffmpegCmd, { timeout: 60000 })
+      if (stderr) {
+        console.log('ffmpeg stderr:', stderr.substring(0, 500))
+      }
+    } catch (ffmpegError: any) {
+      // ffmpeg outputs to stderr even on success, check if output file exists
+      console.log('ffmpeg completed (may have warnings)')
+    }
+    
+    // Read converted file
+    const convertedBuffer = await readFile(outputPath)
+    console.log(`✅ Converted to MP3: ${convertedBuffer.length} bytes`)
+    
+    // Clean up temp files
+    try {
+      await unlink(inputPath)
+      await unlink(outputPath)
+    } catch (cleanupError) {
+      console.log('⚠️ Temp file cleanup warning:', cleanupError)
+    }
+    
+    // Return converted file with new name and type
+    const newFileName = fileName.replace(/\.wav$/i, '.mp3')
+    return { buffer: convertedBuffer, fileName: newFileName, contentType: 'audio/mpeg' }
+    
+  } catch (error) {
+    console.error('❌ Audio conversion failed:', error)
+    console.log('⚠️ Returning original file - playback may not work in browser')
+    return { buffer, fileName, contentType: 'audio/wav' }
+  }
+}
+
 async function uploadAudioToStorage(file: File, userId: string | null): Promise<string> {
   try {
-    // Generate unique file name
+    // Convert file to buffer first
+    const arrayBuffer = await file.arrayBuffer()
+    let buffer = Buffer.from(arrayBuffer)
+    
+    console.log('📤 Step 3a: Processing audio file...')
+    console.log('  - Original file:', file.name)
+    console.log('  - Original size:', file.size, 'bytes')
+    console.log('  - Original type:', file.type)
+    
+    // Check if conversion is needed (for ADPCM WAV files that browsers can't play)
+    const converted = await convertAudioIfNeeded(buffer, file.name)
+    buffer = converted.buffer
+    const actualFileName = converted.fileName
+    const contentType = converted.contentType
+    
+    // Generate unique file name with possibly new extension
     const timestamp = Date.now()
-    const fileExt = file.name.split('.').pop() || 'mp3'
+    const fileExt = actualFileName.split('.').pop()?.toLowerCase() || 'mp3'
     const fileName = `${timestamp}-${uuidv4()}.${fileExt}`
     const filePath = userId ? `${userId}/${fileName}` : `anonymous/${fileName}`
     
-    console.log('📤 Step 3a: Uploading audio via HTTP to Supabase Storage...')
-    console.log('  - File:', fileName)
+    console.log('📤 Uploading audio via HTTP to Supabase Storage...')
+    console.log('  - Final file:', fileName)
     console.log('  - Path:', filePath)
-    console.log('  - Size:', file.size, 'bytes')
-    
-    // Convert file to buffer
-    const arrayBuffer = await file.arrayBuffer()
-    const buffer = Buffer.from(arrayBuffer)
-    console.log('  - Buffer created, size:', buffer.length)
+    console.log('  - Final size:', buffer.length, 'bytes')
+    console.log('  - Content type:', contentType)
     
     // Get Supabase configuration
-    const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL
+    // Use internal URL for server-to-server communication (Docker network)
+    // Fall back to public URL if internal not set
+    const SUPABASE_INTERNAL_URL = process.env.SUPABASE_INTERNAL_URL
+    const SUPABASE_PUBLIC_URL = process.env.NEXT_PUBLIC_SUPABASE_URL
     const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
     
+    // For uploads: prefer internal URL (faster, more reliable in Docker)
+    const UPLOAD_URL = SUPABASE_INTERNAL_URL || SUPABASE_PUBLIC_URL
+    
     console.log('🔑 Checking credentials:')
-    console.log('  - SUPABASE_URL configured:', !!SUPABASE_URL)
+    console.log('  - SUPABASE_INTERNAL_URL configured:', !!SUPABASE_INTERNAL_URL)
+    console.log('  - SUPABASE_PUBLIC_URL configured:', !!SUPABASE_PUBLIC_URL)
+    console.log('  - Using URL for upload:', SUPABASE_INTERNAL_URL ? 'INTERNAL' : 'PUBLIC')
     console.log('  - SERVICE_ROLE_KEY configured:', !!SUPABASE_SERVICE_ROLE_KEY)
     
-    if (!SUPABASE_URL) {
-      throw new Error('SUPABASE_URL not configured')
+    if (!UPLOAD_URL) {
+      throw new Error('No Supabase URL configured (set SUPABASE_INTERNAL_URL or NEXT_PUBLIC_SUPABASE_URL)')
+    }
+    
+    if (!SUPABASE_PUBLIC_URL) {
+      throw new Error('NEXT_PUBLIC_SUPABASE_URL not configured - needed for public audio URLs')
     }
     
     if (!SUPABASE_SERVICE_ROLE_KEY) {
@@ -229,16 +371,16 @@ async function uploadAudioToStorage(file: File, userId: string | null): Promise<
     
     console.log('✅ Credentials verified, proceeding with HTTP upload')
     
-    // Use direct HTTP request instead of SDK to bypass RLS validation issue
-    // This is a workaround for a known issue with @supabase/supabase-js client
-    const uploadUrl = `${SUPABASE_URL}/storage/v1/object/audio-files/${filePath}`
+    // Use direct HTTP request to internal Supabase for upload
+    // Note: Don't use /public/ in upload path - that's only for the public URL
+    const uploadUrl = `${UPLOAD_URL}/storage/v1/object/audio-files/${filePath}`
     console.log('📍 Upload URL:', uploadUrl.replace(SUPABASE_SERVICE_ROLE_KEY || '', '[KEY_REDACTED]'))
     
     const uploadResponse = await fetch(uploadUrl, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-        'Content-Type': file.type || 'audio/mpeg'
+        'Content-Type': contentType
       },
       body: buffer
     })
@@ -249,15 +391,24 @@ async function uploadAudioToStorage(file: File, userId: string | null): Promise<
       throw new Error(`Upload failed: HTTP ${uploadResponse.status} - ${errorText}`)
     }
     
-    // Construct public URL
-    const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/audio-files/${filePath}`
+    // Construct public URL using the PUBLIC URL (for browser access)
+    // This must be the external URL so browsers can access the file
+    const publicUrl = `${SUPABASE_PUBLIC_URL}/storage/v1/object/public/audio-files/${filePath}`
     
-    console.log('✅ Audio uploaded successfully:', publicUrl)
+    console.log('✅ Audio uploaded successfully')
+    console.log('📍 Storage path:', filePath)
+    console.log('📍 Public URL:', publicUrl)
+    console.log('📍 URL accessible:', publicUrl.startsWith('http') ? 'yes' : 'no')
     
     // Validate the public URL before returning
     if (!publicUrl || publicUrl.trim() === '') {
       console.error('❌ Public URL is empty even though upload reported success')
       throw new Error('Storage upload succeeded but returned empty URL')
+    }
+    
+    if (!publicUrl.startsWith('http')) {
+      console.error('❌ Public URL is not a valid HTTP URL:', publicUrl)
+      throw new Error('Invalid public URL format')
     }
     
     return publicUrl
@@ -315,7 +466,7 @@ async function createTranscriptionRecord(data: {
         status: 'pending',
         file_size: data.fileSize,
         transcription_text: '',
-        audio_url: data.audioUrl || '',
+        audio_url: data.audioUrl && data.audioUrl.trim() ? data.audioUrl : null,
         user_id: data.userId || null,
         created_at: new Date().toISOString()
       }
@@ -439,13 +590,17 @@ async function sendToN8NAsync(
     // IMPORTANT: Use regular env vars for server-side runtime values, not NEXT_PUBLIC_*
     let callbackUrl = process.env.CALLBACK_URL || process.env.URL || 'https://healthscribe.pro'
     
-    // Ensure it starts with https:// unless it's localhost
-    if (!callbackUrl.startsWith('http')) {
-      callbackUrl = callbackUrl.includes('localhost') ? `http://${callbackUrl}` : `https://${callbackUrl}`
+    // Check if CALLBACK_URL already contains the full endpoint path
+    // This prevents doubling the path when CALLBACK_URL is fully specified
+    if (!callbackUrl.includes('/api/transcription-result')) {
+      // Ensure it starts with https:// unless it's localhost
+      if (!callbackUrl.startsWith('http')) {
+        callbackUrl = callbackUrl.includes('localhost') ? `http://${callbackUrl}` : `https://${callbackUrl}`
+      }
+      
+      // Add the API endpoint only if not already present
+      callbackUrl = `${callbackUrl}/api/transcription-result-v2`
     }
-    
-    // Add the API endpoint
-    callbackUrl = `${callbackUrl}/api/transcription-result-v2`
     
     // For local development, ensure localhost format
     if (process.env.NODE_ENV === 'development' && !callbackUrl.includes('localhost')) {

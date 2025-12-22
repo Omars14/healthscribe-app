@@ -60,45 +60,13 @@ export async function uploadAudioToStorage(
 
     console.log(`✅ File uploaded successfully to ${filePath}`)
 
-    // CRITICAL FIX: Wait for file to be fully available in storage
-    console.log(`⏳ Waiting for file to be available...`)
-    await new Promise(resolve => setTimeout(resolve, 2000)) // 2 second delay
-
-    // Try to get public URL first
+    // Get public URL immediately - no delay needed for properly configured public buckets
     const { data: { publicUrl } } = supabase.storage
       .from(AUDIO_BUCKET)
       .getPublicUrl(filePath)
 
-    // Verify the public URL works with retry logic
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      try {
-        console.log(`🔍 Verifying public URL (attempt ${attempt}/3)...`)
-        const response = await fetch(publicUrl, {
-          method: 'HEAD',
-          timeout: 5000 // 5 second timeout
-        })
-
-        if (response.ok) {
-          console.log(`✅ Public URL verified successfully`)
-          return { url: publicUrl, error: null }
-        } else {
-          console.warn(`Public URL failed (status ${response.status}), attempt ${attempt}`)
-          if (attempt < 3) {
-            await new Promise(resolve => setTimeout(resolve, 1000)) // Wait 1 second before retry
-          }
-        }
-      } catch (urlError) {
-        console.warn(`Public URL verification failed (attempt ${attempt}):`, urlError)
-        if (attempt < 3) {
-          await new Promise(resolve => setTimeout(resolve, 1000)) // Wait 1 second before retry
-        }
-      }
-    }
-
-    // All public URL attempts failed, try signed URL
-    console.log(`⚠️ Public URL failed after 3 attempts, trying signed URL...`)
-    const signedResult = await getSignedAudioUrl(filePath)
-    return signedResult
+    console.log(`✅ Public URL generated: ${publicUrl}`)
+    return { url: publicUrl, error: null }
   } catch (error) {
     console.error('Upload error:', error)
     return {
@@ -173,45 +141,13 @@ export async function uploadAudioServerSide(
 
     console.log(`✅ Server: File uploaded successfully to ${filePath}`)
 
-    // CRITICAL FIX: Wait for file to be fully available in storage
-    console.log(`⏳ Server: Waiting for file to be available...`)
-    await new Promise(resolve => setTimeout(resolve, 2000)) // 2 second delay
-
-    // Try to get public URL first
+    // Get public URL immediately - no delay needed for properly configured public buckets
     const { data: { publicUrl } } = supabase.storage
       .from(AUDIO_BUCKET)
       .getPublicUrl(filePath)
 
-    // Verify the public URL works with retry logic
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      try {
-        console.log(`🔍 Server: Verifying public URL (attempt ${attempt}/3)...`)
-        const response = await fetch(publicUrl, {
-          method: 'HEAD',
-          timeout: 5000 // 5 second timeout
-        })
-
-        if (response.ok) {
-          console.log(`✅ Server: Public URL verified successfully`)
-          return { url: publicUrl, error: null }
-        } else {
-          console.warn(`Server: Public URL failed (status ${response.status}), attempt ${attempt}`)
-          if (attempt < 3) {
-            await new Promise(resolve => setTimeout(resolve, 1000)) // Wait 1 second before retry
-          }
-        }
-      } catch (urlError) {
-        console.warn(`Server: Public URL verification failed (attempt ${attempt}):`, urlError)
-        if (attempt < 3) {
-          await new Promise(resolve => setTimeout(resolve, 1000)) // Wait 1 second before retry
-        }
-      }
-    }
-
-    // All public URL attempts failed, try signed URL
-    console.log(`⚠️ Server: Public URL failed after 3 attempts, trying signed URL...`)
-    const signedResult = await getSignedAudioUrl(filePath)
-    return signedResult
+    console.log(`✅ Server: Public URL generated: ${publicUrl}`)
+    return { url: publicUrl, error: null }
   } catch (error) {
     console.error('Server upload error:', error)
     return {

@@ -329,7 +329,7 @@ export default function TranscriptionistWorkspace() {
   }, [user?.id])
 
   // FALLBACK: Polling mechanism for processing transcriptions
-  // This ensures updates are received even if SSE fails
+  // This ensures updates are received even if SSE/Realtime fails
   useEffect(() => {
     // Only poll when there are processing items
     if (processingIds.size === 0 || !user?.id) {
@@ -337,6 +337,9 @@ export default function TranscriptionistWorkspace() {
     }
 
     console.log('🔄 Starting fallback polling for', processingIds.size, 'processing items')
+    
+    // Poll immediately on first run, then every 3 seconds
+    let isFirstPoll = true
     
     const pollInterval = setInterval(async () => {
       // Check each processing ID for updates
@@ -379,7 +382,38 @@ export default function TranscriptionistWorkspace() {
           console.error('Fallback poll error for', id, error)
         }
       }
-    }, 5000) // Poll every 5 seconds
+    }, 3000) // Poll every 3 seconds (reduced from 5s for faster updates)
+
+    // Also poll immediately
+    if (isFirstPoll) {
+      isFirstPoll = false
+      // Trigger immediate poll
+      setTimeout(async () => {
+        const idsToCheck = Array.from(processingIds)
+        for (const id of idsToCheck) {
+          try {
+            const response = await fetch(`/api/transcribe-optimized?id=${id}`)
+            if (!response.ok) continue
+            const result = await response.json()
+            if (!result.success || !result.transcription) continue
+            const data = result.transcription
+            const hasText = data.transcription_text && data.transcription_text.trim().length > 0
+            if (hasText || data.status === 'completed' || data.status === 'failed') {
+              console.log('🔄 Immediate poll found update for:', id)
+              const status: TranscriptionStatus = {
+                id: data.id,
+                status: hasText ? 'completed' : data.status,
+                transcription_text: data.transcription_text,
+                audio_url: data.audio_url,
+                error: data.error
+              }
+              handleStatusUpdate(id, status)
+              if (status.status === 'completed') handleTranscriptionComplete(id, status)
+            }
+          } catch (e) { /* ignore */ }
+        }
+      }, 500)
+    }
 
     return () => {
       console.log('🔄 Stopping fallback polling')
@@ -700,6 +734,12 @@ export default function TranscriptionistWorkspace() {
         // Fetch to show the new transcription in the list
         console.log('🔄 Fetching transcriptions to show new upload...')
         await fetchTranscriptions(false, true)
+        
+        // Schedule additional refetches to catch fast completions
+        // n8n typically completes in 1-5 seconds for short audio
+        setTimeout(() => fetchTranscriptions(false, true), 2000)
+        setTimeout(() => fetchTranscriptions(false, true), 5000)
+        setTimeout(() => fetchTranscriptions(false, true), 10000)
         
         setUploadProgress(100)
         

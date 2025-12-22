@@ -5,14 +5,20 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 // Create a service role client for server-side queries (bypasses RLS)
+// Uses internal URL for faster Docker network communication
 function createServiceClient() {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+  // Prefer internal URL for server-to-server communication (faster in Docker)
+  const supabaseUrl = process.env.SUPABASE_INTERNAL_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || ''
   const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || ''
   
   if (!supabaseUrl || !supabaseServiceKey) {
     console.error('SSE: Missing Supabase credentials')
     return null
   }
+  
+  // Log which URL we're using (helpful for debugging)
+  const isInternal = supabaseUrl.includes('supabase-kong') || supabaseUrl.includes('localhost:8000')
+  console.log(`SSE: Using ${isInternal ? 'internal' : 'public'} Supabase URL`)
   
   return createClient(supabaseUrl, supabaseServiceKey, {
     auth: {
