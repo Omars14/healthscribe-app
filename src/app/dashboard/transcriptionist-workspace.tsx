@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -30,9 +30,8 @@ import {
   Clock,
   XCircle
 } from 'lucide-react'
-// import { supabase } from '@/lib/supabase' // No longer needed - using API routes
 import { 
-  submitTranscriptionWithUpdates,
+  submitTranscription,
   validateAudioFile,
   formatFileSize,
   formatDuration,
@@ -40,6 +39,7 @@ import {
 } from '@/lib/transcription-service'
 import { uploadAudioToStorage, getSignedAudioUrl } from '@/lib/storage-service'
 import { BulkUploadModal } from '@/components/bulk-upload-modal'
+import { useTranscriptionUpdates } from '@/hooks/useTranscriptionUpdates'
 
 interface Transcription {
   id: string
@@ -76,8 +76,6 @@ export default function TranscriptionistWorkspace() {
   const [lastSavedText, setLastSavedText] = useState('')
   const [isFetching, setIsFetching] = useState(false)
   const lastFetchTime = useRef<number>(0)
-  const cachedData = useRef<Transcription[] | null>(null)
-  const cacheExpiry = useRef<number>(0)
 
   // Audio player state
   const [isPlaying, setIsPlaying] = useState(false)
@@ -99,63 +97,128 @@ export default function TranscriptionistWorkspace() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const textAreaRef = useRef<HTMLTextAreaElement>(null)
 
+  // Handle real-time updates via SSE for processing transcriptions
+  const handleStatusUpdate = useCallback((id: string, status: TranscriptionStatus) => {
+    console.log('📡 Real-time status update:', { id, status: status.status })
+    
+    // Update the transcription in the list
+    setTranscriptions(prev => {
+      const updated = prev.map(t => {
+        if (t.id === id) {
+          const newStatus = status.transcription_text && status.transcription_text.trim() !== '' 
+            ? 'completed' 
+            : status.status
+          return {
+            ...t,
+            status: newStatus,
+            transcription_text: status.transcription_text || t.transcription_text,
+            audio_url: status.audio_url || t.audio_url,
+          }
+        }
+        return t
+      })
+      return updated
+    })
+    
+    // Also update selected transcription if it matches
+    setSelectedTranscription(prev => {
+      if (prev && prev.id === id) {
+        const newStatus = status.transcription_text && status.transcription_text.trim() !== '' 
+          ? 'completed' 
+          : status.status
+        const updated = {
+          ...prev,
+          status: newStatus,
+          transcription_text: status.transcription_text || prev.transcription_text,
+          audio_url: status.audio_url || prev.audio_url,
+        }
+        // Update editing text if user hasn't made changes
+        if (!hasUnsavedChanges && status.transcription_text) {
+          setEditingText(status.transcription_text)
+          setLastSavedText(status.transcription_text)
+        }
+        return updated
+      }
+      return prev
+    })
+  }, [hasUnsavedChanges])
+
+  const handleTranscriptionComplete = useCallback((id: string, status: TranscriptionStatus) => {
+    console.log('✅ Transcription completed:', id)
+    
+    // Remove from processing IDs
+    setProcessingIds(prev => {
+      const newSet = new Set(prev)
+      newSet.delete(id)
+      return newSet
+    })
+    
+    // Show browser notification
+    if ('Notification' in window && Notification.permission === 'granted') {
+      new Notification('Transcription Complete! ✅', {
+        body: 'Your transcription is ready to review',
+        icon: '/favicon.ico',
+        tag: id
+      })
+    }
+    
+    // Highlight the completed item in the list
+    setTimeout(() => {
+      const element = document.querySelector(`[data-transcription-id="${id}"]`)
+      if (element) {
+        element.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+        element.classList.add('ring-2', 'ring-green-500', 'transition-all')
+        setTimeout(() => {
+          element.classList.remove('ring-2', 'ring-green-500')
+        }, 3000)
+      }
+    }, 100)
+  }, [])
+
+  const handleTranscriptionError = useCallback((id: string, error: Error) => {
+    console.error('❌ Transcription error:', id, error)
+    
+    // Remove from processing IDs
+    setProcessingIds(prev => {
+      const newSet = new Set(prev)
+      newSet.delete(id)
+      return newSet
+    })
+    
+    // Update status to failed
+    setTranscriptions(prev => prev.map(t => 
+      t.id === id ? { ...t, status: 'failed' } : t
+    ))
+  }, [])
+
+  // Use the SSE hook for real-time updates
+  useTranscriptionUpdates({
+    processingIds,
+    onStatusUpdate: handleStatusUpdate,
+    onComplete: handleTranscriptionComplete,
+    onError: handleTranscriptionError
+  })
+
+  // Initial fetch when user loads
   useEffect(() => {
     if (user?.id) {
       console.log('🔄 Initial fetchTranscriptions triggered for user:', user.id)
       fetchTranscriptions()
     }
-  }, [user?.id]) // Only re-fetch when user changes
-
-  // Separate effect for auto-refresh interval - only depends on user
-  useEffect(() => {
-    if (!user?.id) return
-
-    console.log('🔄 Setting up auto-refresh interval for user:', user.id)
-
-    const checkProcessingItems = () => {
-      // Only refresh if we have processing items and aren't currently fetching
-      if (processingIds.size > 0 && !isFetching) {
-        const now = Date.now()
-        const timeSinceLastFetch = now - lastFetchTime.current
-
-        // Only auto-refresh if it's been at least 10 seconds since last fetch
-        if (timeSinceLastFetch >= 10000) {
-          console.log('⏰ Auto-refreshing for processing transcriptions...', processingIds.size, 'items')
-          fetchTranscriptions(false) // Don't show loading state for auto-refresh
-        } else {
-          console.log('⏰ Skipping auto-refresh: too soon since last fetch (', timeSinceLastFetch, 'ms)')
-        }
-      }
-    }
-
-    // Check immediately when processing items change
-    checkProcessingItems()
-
-    // Set up interval to check every 30 seconds
-    const interval = setInterval(checkProcessingItems, 30000)
-
-    return () => {
-      console.log('🔄 Clearing auto-refresh interval')
-      clearInterval(interval)
-    }
-  }, [user?.id]) // Only depend on user ID to avoid recreating interval
-
-  // Effect to handle immediate refresh when processing items change
-  useEffect(() => {
-    if (processingIds.size > 0 && user?.id && !isFetching) {
-      const now = Date.now()
-      const timeSinceLastFetch = now - lastFetchTime.current
-
-      // Only refresh if it's been at least 5 seconds since last fetch
-      if (timeSinceLastFetch >= 5000) {
-        console.log('🔄 Processing items changed, refreshing...', processingIds.size, 'items')
-        fetchTranscriptions(false)
-      }
-    }
-  }, [processingIds.size, user?.id, isFetching])
+  }, [user?.id])
 
   useEffect(() => {
     if (selectedTranscription) {
+      console.log('📄 Transcription selected:', {
+        id: selectedTranscription.id,
+        fileName: selectedTranscription.file_name,
+        hasAudioUrl: !!selectedTranscription.audio_url,
+        audioUrl: selectedTranscription.audio_url ? selectedTranscription.audio_url.substring(0, 100) + '...' : 'MISSING',
+        status: selectedTranscription.status,
+        audioUrlValid: selectedTranscription.audio_url ? (
+          selectedTranscription.audio_url.startsWith('http') ? 'valid URL' : 'invalid - missing http'
+        ) : 'no URL'
+      })
       const initialText = selectedTranscription.transcription_text || ''
       setEditingText(initialText)
       setLastSavedText(initialText)
@@ -252,33 +315,27 @@ export default function TranscriptionistWorkspace() {
 
   const fetchTranscriptions = async (showLoadingState = true, forceRefresh = false) => {
     try {
-      // Check cache first (unless force refresh)
+      // Prevent duplicate concurrent API calls
+      if (isFetching) {
+        console.log('🚫 WORKSPACE: Skipping fetch - already fetching')
+        return
+      }
+
+      // Simple debounce - wait at least 1 second between fetches
       const now = Date.now()
-      if (!forceRefresh && cachedData.current && now < cacheExpiry.current) {
-        console.log('💾 WORKSPACE: Using cached data, expires in:', Math.round((cacheExpiry.current - now) / 1000), 'seconds')
-        setTranscriptions(cachedData.current)
-        if (showLoadingState) setLoading(false)
-        return
-      }
-
-      // Prevent duplicate API calls within 3 seconds
       const timeSinceLastFetch = now - lastFetchTime.current
-
-      if (isFetching || timeSinceLastFetch < 3000) {
-        console.log('🚫 WORKSPACE: Skipping fetchTranscriptions call - isFetching:', isFetching, 'timeSinceLastFetch:', timeSinceLastFetch)
+      if (!forceRefresh && timeSinceLastFetch < 1000) {
+        console.log('🚫 WORKSPACE: Skipping fetch - too soon since last fetch')
         return
       }
 
-      console.log('🚀 WORKSPACE: fetchTranscriptions called with showLoadingState:', showLoadingState)
+      console.log('🚀 WORKSPACE: fetchTranscriptions called')
       setIsFetching(true)
       lastFetchTime.current = now
 
       if (showLoadingState) {
         setLoading(true)
       }
-
-      console.log('🚀 WORKSPACE: Using API route for transcriptions...')
-      console.log('🚀 WORKSPACE: Current user:', user?.email, 'User ID:', user?.id)
 
       if (!user?.id) {
         console.log('❌ WORKSPACE: No authenticated user found')
@@ -303,8 +360,7 @@ export default function TranscriptionistWorkspace() {
       const result = await response.json()
       console.log('🚀 WORKSPACE: API Response:', { 
         success: result.success,
-        count: result.count,
-        hasData: !!result.transcriptions
+        count: result.count
       })
       
       if (!result.success) {
@@ -312,7 +368,6 @@ export default function TranscriptionistWorkspace() {
       }
       
       const data = result.transcriptions
-      const error = null
       
       // Track which transcriptions are processing
       const newProcessingIds = new Set<string>()
@@ -322,7 +377,6 @@ export default function TranscriptionistWorkspace() {
         let computedStatus: 'pending' | 'in_progress' | 'completed' | 'failed'
         
         if (t.transcription_text && String(t.transcription_text).trim() !== '') {
-          // If we have text, it's completed regardless of a stale status column
           computedStatus = 'completed'
         } else if (t.status) {
           computedStatus = t.status
@@ -330,7 +384,7 @@ export default function TranscriptionistWorkspace() {
           computedStatus = 'pending'
         }
         
-        // Track processing items
+        // Track processing items for SSE subscriptions
         if (computedStatus === 'in_progress' || computedStatus === 'pending') {
           newProcessingIds.add(t.id)
         }
@@ -343,15 +397,33 @@ export default function TranscriptionistWorkspace() {
       
       setTranscriptions(transcriptionsWithStatus)
 
-      // Update cache
-      cachedData.current = transcriptionsWithStatus
-      cacheExpiry.current = Date.now() + 30000 // Cache for 30 seconds
-
-      // Only update processingIds if the count actually changed
-      if (newProcessingIds.size !== processingIds.size) {
-        console.log('🔄 Processing count changed:', processingIds.size, '→', newProcessingIds.size)
-        setProcessingIds(newProcessingIds)
+      // Auto-update selected transcription if it exists in the new data
+      if (selectedTranscription) {
+        const updatedSelected = transcriptionsWithStatus.find(t => t.id === selectedTranscription.id)
+        if (updatedSelected) {
+          const hasNewText = updatedSelected.transcription_text && 
+            updatedSelected.transcription_text !== selectedTranscription.transcription_text
+          const wasProcessing = selectedTranscription.status === 'pending' || selectedTranscription.status === 'in_progress'
+          const isNowComplete = updatedSelected.status === 'completed'
+          
+          if (hasNewText || (wasProcessing && isNowComplete)) {
+            console.log('✨ Auto-updating selected transcription with new data')
+            setSelectedTranscription(updatedSelected)
+            if (!hasUnsavedChanges && updatedSelected.transcription_text) {
+              setEditingText(updatedSelected.transcription_text)
+              setLastSavedText(updatedSelected.transcription_text)
+            }
+          }
+        }
       }
+
+      // Update processingIds for SSE hook
+      setProcessingIds(prev => {
+        // Merge existing processing IDs with new ones to avoid losing subscriptions
+        const merged = new Set([...prev].filter(id => newProcessingIds.has(id)))
+        newProcessingIds.forEach(id => merged.add(id))
+        return merged
+      })
 
       setLastRefresh(new Date())
     } catch (error) {
@@ -423,111 +495,35 @@ export default function TranscriptionistWorkspace() {
     setUploading(true)
     setUploadProgress(10)
     
-    // Store upload info for later
-    const uploadInfo = {
-      fileName: selectedFile.name,
-      doctorName: uploadFormData.doctorName,
-      patientName: uploadFormData.patientName
-    }
-    
-    console.log('📤 Starting upload:', uploadInfo.fileName)
+    console.log('📤 Starting upload:', selectedFile.name)
     
     try {
-      // Submit with real-time updates and progress tracking
-      const response = await submitTranscriptionWithUpdates(
-        {
-          audioFile: selectedFile,
-          doctorName: uploadFormData.doctorName,
-          patientName: uploadFormData.patientName,
-          documentType: uploadFormData.documentType
-        },
-        async (status: TranscriptionStatus) => {
-          console.log('📡 Real-time status update:', { id: status.id, status: status.status })
-
-          // Update progress based on status
-          if (status.status === 'pending') {
-            setUploadProgress(30)
-          } else if (status.status === 'in_progress') {
-            setUploadProgress(60)
-          } else if (status.status === 'completed') {
-            setUploadProgress(90)
-          }
-
-          // Update existing transcription in the list (if it exists)
-          setTranscriptions(prev => {
-            const exists = prev.some(t => t.id === status.id)
-            if (exists) {
-              return prev.map(t => {
-                if (t.id === status.id) {
-                  return {
-                    ...t,
-                    status: status.status,
-                    transcription_text: status.transcription_text || t.transcription_text,
-                    audio_url: status.audio_url || t.audio_url,
-                  }
-                }
-                return t
-              })
-            }
-            return prev
-          })
-
-          // If completed or failed, force refresh to show final state
-          if (status.status === 'completed' || status.status === 'failed') {
-            console.log('🎉 Transcription processing complete! Force refreshing...')
-            
-            // Show browser notification
-            if (status.status === 'completed' && 'Notification' in window && Notification.permission === 'granted') {
-              new Notification('Transcription Complete! ✅', {
-                body: `Your transcription is ready to review`,
-                icon: '/favicon.ico',
-                tag: status.id
-              })
-            }
-            
-            setUploadProgress(95)
-            
-            // FORCE refresh to get complete data from database
-            await fetchTranscriptions(false, true)
-            
-            setUploadProgress(100)
-            
-            // Auto-select after data is loaded
-            setTimeout(() => {
-              setTranscriptions(prev => {
-                const completedTranscription = prev.find(t => t.id === status.id)
-                if (completedTranscription) {
-                  console.log('✅ Auto-selecting:', completedTranscription.file_name)
-                  setSelectedTranscription(completedTranscription)
-                  
-                  // Scroll and highlight
-                  setTimeout(() => {
-                    const element = document.querySelector(`[data-transcription-id="${status.id}"]`)
-                    if (element) {
-                      element.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
-                      element.classList.add('ring-2', 'ring-green-500', 'transition-all')
-                      setTimeout(() => {
-                        element.classList.remove('ring-2', 'ring-green-500')
-                      }, 3000)
-                    }
-                  }, 100)
-                }
-                return prev
-              })
-            }, 600)
-          }
-        }
-      )
+      // Submit transcription - SSE hook will handle real-time updates
+      const response = await submitTranscription({
+        audioFile: selectedFile,
+        doctorName: uploadFormData.doctorName,
+        patientName: uploadFormData.patientName,
+        documentType: uploadFormData.documentType
+      })
       
       if (response.success && response.transcriptionId) {
         console.log(`✅ Upload successful, ID: ${response.transcriptionId}`)
-        setUploadProgress(20)
+        setUploadProgress(50)
         
-        // IMMEDIATELY fetch to show the new transcription in the list
+        // Add to processing IDs - SSE hook will automatically subscribe
+        setProcessingIds(prev => {
+          const newSet = new Set(prev)
+          newSet.add(response.transcriptionId!)
+          return newSet
+        })
+        
+        // Fetch to show the new transcription in the list
         console.log('🔄 Fetching transcriptions to show new upload...')
         await fetchTranscriptions(false, true)
         
-        // Find and highlight the newly uploaded item
+        setUploadProgress(100)
+        
+        // Find and select the newly uploaded item
         setTimeout(() => {
           setTranscriptions(prev => {
             const newItem = prev.find(t => t.id === response.transcriptionId)
@@ -535,7 +531,7 @@ export default function TranscriptionistWorkspace() {
               console.log('✅ Found new upload in list:', newItem.file_name)
               setSelectedTranscription(newItem)
               
-              // Scroll to it
+              // Scroll to it and highlight
               setTimeout(() => {
                 const element = document.querySelector(`[data-transcription-id="${response.transcriptionId}"]`)
                 if (element) {
@@ -551,7 +547,7 @@ export default function TranscriptionistWorkspace() {
             }
             return prev
           })
-        }, 500)
+        }, 300)
         
         // Clear form
         setSelectedFile(null)
@@ -559,18 +555,28 @@ export default function TranscriptionistWorkspace() {
         setUploading(false)
         setUploadProgress(0)
         
-        console.log('✅ Upload flow complete')
+        console.log('✅ Upload submitted - SSE will provide real-time updates')
       } else {
+        console.error('❌ Upload response not successful:', response)
         throw new Error(response.error || 'Failed to submit transcription')
       }
     } catch (error) {
       console.error('❌ Upload error:', error)
-      alert(`Failed to upload: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      
+      let errorMessage = 'Failed to upload file. Please try again.'
+      if (error instanceof Error) {
+        if (error.message.includes('JSON')) {
+          errorMessage = 'Server error: Invalid response. Please check your connection and try again.'
+        } else if (error.message.includes('Network')) {
+          errorMessage = 'Network error: Please check your internet connection.'
+        } else {
+          errorMessage = error.message
+        }
+      }
+      
+      alert(errorMessage)
       setUploading(false)
       setUploadProgress(0)
-      
-      // Ensure list is fresh even after error
-      await fetchTranscriptions(false, true)
     }
   }
 
@@ -671,12 +677,32 @@ export default function TranscriptionistWorkspace() {
   }
 
   const togglePlayPause = () => {
-    if (!audioRef.current) return
+    if (!audioRef.current) {
+      console.error('❌ Audio ref not available')
+      return
+    }
+    
+    const audio = audioRef.current
+    
+    // Debug: Check audio state before playing
+    console.log('🎵 Audio element state:', {
+      src: audio.src,
+      duration: audio.duration,
+      currentTime: audio.currentTime,
+      readyState: audio.readyState,
+      canPlay: audio.readyState >= 2,
+      error: audio.error?.message || 'none'
+    })
     
     if (isPlaying) {
-      audioRef.current.pause()
+      console.log('⏸️ Pausing audio')
+      audio.pause()
     } else {
-      audioRef.current.play()
+      console.log('▶️ Playing audio from', audio.currentTime, 'seconds')
+      audio.play().catch(err => {
+        console.error('❌ Play error:', err)
+        alert(`Failed to play audio: ${err.message}`)
+      })
     }
     setIsPlaying(!isPlaying)
   }
@@ -1073,14 +1099,48 @@ export default function TranscriptionistWorkspace() {
                       </div>
 
                       {/* Audio Element */}
-                      {selectedTranscription.audio_url && (
+                      {selectedTranscription.audio_url ? (
                         <audio
                           ref={audioRef}
                           src={selectedTranscription.audio_url}
                           onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
-                          onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
-                          onEnded={() => setIsPlaying(false)}
+                          onLoadedMetadata={(e) => {
+                            console.log('✅ Audio loaded, duration:', e.currentTarget.duration, 'seconds')
+                            console.log('🔊 Audio MIME type:', e.currentTarget.type || 'unknown')
+                            setDuration(e.currentTarget.duration)
+                          }}
+                          onEnded={() => {
+                            console.log('🎵 Audio playback ended')
+                            setIsPlaying(false)
+                          }}
+                          onError={(e) => {
+                            console.error('❌ Audio error:', {
+                              errorCode: e.currentTarget.error?.code,
+                              errorMessage: e.currentTarget.error?.message,
+                              audioSrc: e.currentTarget.src,
+                              networkState: e.currentTarget.networkState,
+                              readyState: e.currentTarget.readyState
+                            })
+                            alert(`Audio loading error: ${e.currentTarget.error?.message || 'Unknown error'}`)
+                          }}
+                          onCanPlay={() => {
+                            console.log('✅ Audio can play')
+                          }}
+                          onLoadStart={() => {
+                            console.log('📄 Audio loading started')
+                            console.log('  URL:', selectedTranscription.audio_url)
+                            console.log('  Valid URL:', selectedTranscription.audio_url.startsWith('http'))
+                          }}
+                          onDurationChange={(e) => {
+                            console.log('⏱️ Duration changed:', e.currentTarget.duration)
+                          }}
+                          crossOrigin="anonymous"
+                          preload="metadata"
                         />
+                      ) : (
+                        <div className="bg-amber-50 p-4 rounded text-amber-700 text-sm">
+                          ⚠️ No audio URL available for this transcription
+                        </div>
                       )}
 
                       {/* Progress Bar */}
