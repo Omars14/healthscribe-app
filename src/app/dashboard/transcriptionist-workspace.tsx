@@ -706,131 +706,82 @@ export default function TranscriptionistWorkspace() {
       return
     }
     
+    // Store file and form data before any state changes
+    const fileToUpload = selectedFile
+    const formDataToUpload = { ...uploadFormData }
+    
     setUploading(true)
     setUploadProgress(10)
     
-    console.log('📤 Starting upload:', selectedFile.name)
-    
-    // Generate a temporary ID for immediate display
-    const tempId = `temp-${Date.now()}`
-    
-    // IMMEDIATELY add a placeholder transcription to the list with "processing" status
-    const placeholderTranscription: Transcription = {
-      id: tempId,
-      file_name: selectedFile.name,
-      doctor_name: uploadFormData.doctorName,
-      patient_name: uploadFormData.patientName,
-      document_type: uploadFormData.documentType,
-      transcription_text: '',
-      audio_url: '',
-      created_at: new Date().toISOString(),
-      status: 'in_progress',
-      file_size: selectedFile.size
-    }
-    
-    // Add to list immediately and select it
-    setTranscriptions(prev => [placeholderTranscription, ...prev])
-    setSelectedTranscription(placeholderTranscription)
-    setProcessingIds(prev => new Set([...prev, tempId]))
-    
-    console.log('📤 Added placeholder transcription:', tempId)
-    
-    // Scroll to the new item
-    setTimeout(() => {
-      const element = document.querySelector(`[data-transcription-id="${tempId}"]`)
-      if (element) {
-        element.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
-      }
-    }, 100)
+    console.log('📤 Starting upload:', fileToUpload.name)
     
     try {
-      // Submit transcription - SSE hook will handle real-time updates
+      // Submit transcription to server
       const response = await submitTranscription({
-        audioFile: selectedFile,
-        doctorName: uploadFormData.doctorName,
-        patientName: uploadFormData.patientName,
-        documentType: uploadFormData.documentType
+        audioFile: fileToUpload,
+        doctorName: formDataToUpload.doctorName,
+        patientName: formDataToUpload.patientName,
+        documentType: formDataToUpload.documentType
       })
       
       if (response.success && response.transcriptionId) {
         console.log(`✅ Upload successful, ID: ${response.transcriptionId}`)
         setUploadProgress(50)
         
-        // Replace the temp ID with the real ID in the list
-        setTranscriptions(prev => prev.map(t => 
-          t.id === tempId 
-            ? { ...t, id: response.transcriptionId! }
-            : t
-        ))
-        
-        // Update selected transcription with real ID
-        setSelectedTranscription(prev => 
-          prev && prev.id === tempId 
-            ? { ...prev, id: response.transcriptionId! }
-            : prev
-        )
-        
-        // Update processing IDs - remove temp, add real
+        // Add to processing IDs for SSE subscription
         setProcessingIds(prev => {
           const newSet = new Set(prev)
-          newSet.delete(tempId)
           newSet.add(response.transcriptionId!)
           return newSet
         })
         
-        // Schedule refetches to get the real data and catch completions
-        setTimeout(() => fetchTranscriptions(false, true), 2000)
-        setTimeout(() => fetchTranscriptions(false, true), 5000)
-        setTimeout(() => fetchTranscriptions(false, true), 10000)
+        // Fetch transcriptions to get the new item in the list
+        await fetchTranscriptions(false, true)
         
         setUploadProgress(100)
         
-        // Scroll to and highlight the item with real ID
+        // Find and select the newly uploaded item
         setTimeout(() => {
-          const element = document.querySelector(`[data-transcription-id="${response.transcriptionId}"]`)
-          if (element) {
-            element.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
-            element.classList.add('ring-2', 'ring-blue-500', 'transition-all')
-            setTimeout(() => {
-              element.classList.remove('ring-2', 'ring-blue-500')
-            }, 4000)
-          }
+          setTranscriptions(prev => {
+            const newItem = prev.find(t => t.id === response.transcriptionId)
+            if (newItem) {
+              console.log('✅ Found new upload in list:', newItem.file_name)
+              setSelectedTranscription(newItem)
+              
+              // Scroll to it and highlight
+              setTimeout(() => {
+                const element = document.querySelector(`[data-transcription-id="${response.transcriptionId}"]`)
+                if (element) {
+                  element.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+                  element.classList.add('ring-2', 'ring-blue-500', 'transition-all')
+                  setTimeout(() => {
+                    element.classList.remove('ring-2', 'ring-blue-500')
+                  }, 4000)
+                }
+              }, 100)
+            }
+            return prev
+          })
         }, 300)
         
-        // Clear form
+        // Schedule additional refetches to catch fast completions
+        setTimeout(() => fetchTranscriptions(false, true), 3000)
+        setTimeout(() => fetchTranscriptions(false, true), 6000)
+        setTimeout(() => fetchTranscriptions(false, true), 10000)
+        
+        // Clear form after successful upload
         setSelectedFile(null)
         setUploadFormData({ doctorName: '', patientName: '', documentType: 'consultation' })
         setUploading(false)
         setUploadProgress(0)
         
-        console.log('✅ Upload submitted - SSE will provide real-time updates')
+        console.log('✅ Upload submitted - will auto-refresh for updates')
       } else {
         console.error('❌ Upload response not successful:', response)
-        // Remove the placeholder on failure
-        setTranscriptions(prev => prev.filter(t => t.id !== tempId))
-        setProcessingIds(prev => {
-          const newSet = new Set(prev)
-          newSet.delete(tempId)
-          return newSet
-        })
-        if (selectedTranscription?.id === tempId) {
-          setSelectedTranscription(null)
-        }
         throw new Error(response.error || 'Failed to submit transcription')
       }
     } catch (error) {
       console.error('❌ Upload error:', error)
-      
-      // Remove the placeholder on error
-      setTranscriptions(prev => prev.filter(t => t.id !== tempId))
-      setProcessingIds(prev => {
-        const newSet = new Set(prev)
-        newSet.delete(tempId)
-        return newSet
-      })
-      if (selectedTranscription?.id === tempId) {
-        setSelectedTranscription(null)
-      }
       
       let errorMessage = 'Failed to upload file. Please try again.'
       if (error instanceof Error) {
