@@ -49,15 +49,21 @@ export function useTranscriptionUpdates({
       if (!currentSubscriptions.has(id)) {
         console.log(`📡 SSE: Subscribing to transcription ${id}`)
         
+        // Track if this transcription has already completed to avoid duplicate callbacks
+        let hasCompleted = false
+        
         const unsubscribe = subscribeToTranscriptionStatus(
           id,
           (status) => {
-            console.log(`📡 SSE: Status update for ${id}:`, status.status)
+            console.log(`📡 SSE: Status update for ${id}:`, status.status, 'hasCompleted:', hasCompleted)
+            
+            // Always update status first
             onStatusUpdateRef.current(id, status)
             
-            // If completed or failed, call appropriate callback and cleanup
-            if (status.status === 'completed') {
-              console.log(`✅ SSE: Transcription ${id} completed`)
+            // If completed or failed, call appropriate callback and cleanup (only once)
+            if (status.status === 'completed' && !hasCompleted) {
+              hasCompleted = true
+              console.log(`✅ SSE: Transcription ${id} completed - calling onComplete`)
               if (onCompleteRef.current) {
                 onCompleteRef.current(id, status)
               }
@@ -67,7 +73,8 @@ export function useTranscriptionUpdates({
                 unsub()
                 currentSubscriptions.delete(id)
               }
-            } else if (status.status === 'failed') {
+            } else if (status.status === 'failed' && !hasCompleted) {
+              hasCompleted = true
               console.log(`❌ SSE: Transcription ${id} failed`)
               if (onErrorRef.current) {
                 onErrorRef.current(id, new Error(status.error || 'Transcription failed'))
@@ -82,7 +89,8 @@ export function useTranscriptionUpdates({
           },
           (error) => {
             console.error(`❌ SSE: Error for transcription ${id}:`, error)
-            if (onErrorRef.current) {
+            if (onErrorRef.current && !hasCompleted) {
+              hasCompleted = true
               onErrorRef.current(id, error instanceof Error ? error : new Error(String(error)))
             }
             // Cleanup on error

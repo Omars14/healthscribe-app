@@ -1,8 +1,26 @@
 import { NextRequest } from 'next/server'
-import { supabase } from '@/lib/supabase'
+import { createClient } from '@supabase/supabase-js'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
+
+// Create a service role client for server-side queries (bypasses RLS)
+function createServiceClient() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+  const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || ''
+  
+  if (!supabaseUrl || !supabaseServiceKey) {
+    console.error('SSE: Missing Supabase credentials')
+    return null
+  }
+  
+  return createClient(supabaseUrl, supabaseServiceKey, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false
+    }
+  })
+}
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
@@ -10,6 +28,12 @@ export async function GET(request: NextRequest) {
   
   if (!transcriptionId) {
     return new Response('Transcription ID required', { status: 400 })
+  }
+  
+  // Create service role client for reliable server-side access
+  const supabase = createServiceClient()
+  if (!supabase) {
+    return new Response('Server configuration error', { status: 500 })
   }
   
   // Create a readable stream for SSE
@@ -20,14 +44,16 @@ export async function GET(request: NextRequest) {
       controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'connected' })}\n\n`))
       
       let retryCount = 0
-      const maxRetries = 120 // 2 minutes with 1 second intervals
+      const maxRetries = 180 // 3 minutes with 1 second intervals
+      let lastStatus = ''
+      let lastTextLength = 0
       
       // Set up interval to check for updates
       const interval = setInterval(async () => {
         try {
           const { data, error } = await supabase
             .from('transcriptions')
-            .select('*')
+            .select('id, status, transcription_text, audio_url, error, updated_at')
             .eq('id', transcriptionId)
             .single()
           
@@ -44,23 +70,48 @@ export async function GET(request: NextRequest) {
           }
           
           if (data) {
-            // Send status update
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify({
-              type: 'status',
-              data: {
-                id: data.id,
-                status: data.status,
-                transcription_text: data.transcription_text,
-                audio_url: data.audio_url,
-                error: data.error
-              }
-            })}\n\n`))
+            // Determine actual completion - check both status AND transcription_text presence
+            const hasTranscriptionText = data.transcription_text && data.transcription_text.trim().length > 0
+            const currentTextLength = data.transcription_text?.length || 0
+            const statusChanged = data.status !== lastStatus
+            const textChanged = currentTextLength !== lastTextLength
+            
+            // Consider completed if status says so OR if we have transcription text
+            const isActuallyCompleted = data.status === 'completed' || hasTranscriptionText
+            const effectiveStatus = isActuallyCompleted ? 'completed' : data.status
+            
+            // Only send updates if something changed
+            if (statusChanged || textChanged || retryCount === 0) {
+              lastStatus = data.status
+              lastTextLength = currentTextLength
+              
+              // Send status update
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify({
+                type: 'status',
+                data: {
+                  id: data.id,
+                  status: effectiveStatus,
+                  transcription_text: data.transcription_text,
+                  audio_url: data.audio_url,
+                  error: data.error
+                }
+              })}\n\n`))
+            }
             
             // If completed or failed, close the stream
-            if (data.status === 'completed' || data.status === 'failed') {
+            if (isActuallyCompleted || data.status === 'failed') {
+              console.log(`SSE: Transcription ${transcriptionId} ${effectiveStatus}, closing stream`)
+              // Include the full transcription data in the completion event
               controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
                 type: 'complete',
-                status: data.status 
+                status: effectiveStatus,
+                data: {
+                  id: data.id,
+                  status: effectiveStatus,
+                  transcription_text: data.transcription_text,
+                  audio_url: data.audio_url,
+                  error: data.error
+                }
               })}\n\n`))
               clearInterval(interval)
               controller.close()

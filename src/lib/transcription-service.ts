@@ -62,10 +62,37 @@ export async function submitTranscription(
       body: formData, // Send FormData with file
     })
 
-    const data = await response.json()
+    console.log('📡 API Response status:', response.status, response.statusText)
+
+    // Safely parse JSON response with error handling
+    let data: TranscriptionResponse
+    try {
+      const responseText = await response.text()
+      console.log('📄 Response text:', responseText.substring(0, 500))
+      
+      if (!responseText) {
+        throw new Error('Empty response from server')
+      }
+      
+      data = JSON.parse(responseText)
+    } catch (parseError) {
+      console.error('❌ JSON parse error:', parseError)
+      console.error('Response status:', response.status)
+      
+      // If response text is not JSON, return a helpful error
+      if (!response.ok) {
+        return {
+          success: false,
+          error: `Server error (${response.status}): ${response.statusText}`,
+          message: 'The server returned an invalid response. Please check your network and try again.'
+        }
+      }
+      
+      throw new Error(`Invalid JSON response from server: ${parseError instanceof Error ? parseError.message : 'Unknown parse error'}`)
+    }
 
     if (!response.ok) {
-      throw new Error(data.error || 'Failed to submit transcription')
+      throw new Error(data.error || `Failed to submit transcription (${response.status})`)
     }
 
     return data
@@ -278,6 +305,10 @@ export function subscribeToTranscriptionStatus(
       if (data.type === 'status') {
         onUpdate(data.data)
       } else if (data.type === 'complete') {
+        // Send final status update with full data before completing
+        if (data.data) {
+          onUpdate(data.data)
+        }
         if (onComplete) onComplete()
         eventSource.close()
       } else if (data.type === 'error' || data.type === 'timeout') {

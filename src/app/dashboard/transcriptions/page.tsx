@@ -3,7 +3,7 @@
 // Force dynamic rendering - no static generation
 export const dynamic = 'force-dynamic'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuth } from '@/contexts/AuthContext'
 import { Button } from '@/components/ui/button'
@@ -23,7 +23,9 @@ import {
   FileText,
   User,
   Send,
-  Eye
+  Eye,
+  RefreshCw,
+  Loader2
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase' // Re-enabled for direct client-side queries
 import { formatFileSize, formatDuration } from '@/lib/transcription-service'
@@ -50,6 +52,7 @@ export default function TranscriptionsPage() {
   const [transcriptions, setTranscriptions] = useState<Transcription[]>([])
   const [filteredTranscriptions, setFilteredTranscriptions] = useState<Transcription[]>([])
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [dateFilter, setDateFilter] = useState<string>('all')
@@ -57,20 +60,95 @@ export default function TranscriptionsPage() {
   const [typeFilter, setTypeFilter] = useState<string>('all')
   const [currentPage, setCurrentPage] = useState(1)
   const [showFilters, setShowFilters] = useState(false)
+  const [processingCount, setProcessingCount] = useState(0)
   const itemsPerPage = 10
 
+  // Initial fetch when user loads
   useEffect(() => {
-    fetchTranscriptions()
-  }, [])
+    if (user?.id) {
+      fetchTranscriptions()
+    }
+  }, [user?.id])
+
+  // SUPABASE REALTIME: Subscribe to database changes for instant updates
+  useEffect(() => {
+    if (!user?.id || !supabase) return
+
+    console.log('📡 Transcriptions: Setting up Supabase Realtime subscription')
+
+    const channel = supabase
+      .channel('transcriptions-page-updates')
+      .on(
+        'postgres_changes',
+        {
+          event: '*', // Listen to INSERT, UPDATE, DELETE
+          schema: 'public',
+          table: 'transcriptions',
+          filter: `user_id=eq.${user.id}`
+        },
+        (payload: { eventType: string; new: Record<string, any>; old: Record<string, any> }) => {
+          console.log('📡 Transcriptions: Realtime event:', payload.eventType)
+          
+          if (payload.eventType === 'INSERT') {
+            // Add new transcription to the list
+            const newItem = payload.new as any
+            const hasText = newItem.transcription_text && newItem.transcription_text.trim().length > 0
+            setTranscriptions(prev => [{
+              ...newItem,
+              status: hasText ? 'completed' : (newItem.status || 'pending')
+            }, ...prev])
+          } else if (payload.eventType === 'UPDATE') {
+            // Update existing transcription
+            const updatedItem = payload.new as any
+            const hasText = updatedItem.transcription_text && updatedItem.transcription_text.trim().length > 0
+            setTranscriptions(prev => prev.map(t => 
+              t.id === updatedItem.id 
+                ? { ...t, ...updatedItem, status: hasText ? 'completed' : (updatedItem.status || t.status) }
+                : t
+            ))
+          } else if (payload.eventType === 'DELETE') {
+            // Remove deleted transcription
+            const deletedId = payload.old?.id
+            if (deletedId) {
+              setTranscriptions(prev => prev.filter(t => t.id !== deletedId))
+            }
+          }
+        }
+      )
+      .subscribe((status: string) => {
+        console.log('📡 Transcriptions: Realtime subscription status:', status)
+      })
+
+    return () => {
+      console.log('📡 Transcriptions: Cleaning up Realtime subscription')
+      supabase.removeChannel(channel)
+    }
+  }, [user?.id])
+
+  // FALLBACK: Auto-refresh when there are processing items
+  useEffect(() => {
+    if (processingCount === 0) return
+
+    console.log('🔄 Transcriptions: Starting auto-refresh for', processingCount, 'processing items')
+    
+    const refreshInterval = setInterval(() => {
+      fetchTranscriptions(true) // Silent refresh
+    }, 5000) // Check every 5 seconds
+
+    return () => {
+      clearInterval(refreshInterval)
+    }
+  }, [processingCount])
 
   useEffect(() => {
     applyFilters()
   }, [transcriptions, searchTerm, statusFilter, dateFilter, doctorFilter, typeFilter])
 
-  const fetchTranscriptions = async () => {
+  const fetchTranscriptions = async (silent = false) => {
     try {
-      console.log('🚀 USING DIRECT SUPABASE: Fetching transcriptions via client...')
-      console.log('🚀 Current user:', user?.email, 'User ID:', user?.id)
+      if (!silent) {
+        console.log('🚀 Fetching transcriptions...')
+      }
       
       if (!user?.id) {
         console.log('❌ No authenticated user found')
@@ -79,7 +157,9 @@ export default function TranscriptionsPage() {
         return
       }
       
-      console.log('🚀 Querying Supabase directly for user:', user.id)
+      if (!silent) {
+        setRefreshing(true)
+      }
       
       const { data, error } = await supabase
         .from('transcriptions')
@@ -87,32 +167,41 @@ export default function TranscriptionsPage() {
         .eq('user_id', user.id)
         .order('created_at', { ascending: false })
 
-      console.log('🚀 Supabase Response:', {
-        hasData: !!data,
-        count: data?.length,
-        error: error?.message
-      })
-
       if (error) {
         console.error('❌ Supabase error:', error)
         throw error
       }
 
       // Add computed status based on transcription_text
-      const transcriptionsWithStatus = (data || []).map(t => ({
-        ...t,
-        status: t.transcription_text && t.transcription_text.trim() !== '' 
-          ? 'completed' 
-          : 'pending'
-      }))
+      let processing = 0
+      const transcriptionsWithStatus = (data || []).map((t: any) => {
+        const hasText = t.transcription_text && t.transcription_text.trim() !== ''
+        const computedStatus = hasText ? 'completed' : (t.status || 'pending')
+        
+        if (computedStatus === 'pending' || computedStatus === 'in_progress') {
+          processing++
+        }
+        
+        return {
+          ...t,
+          status: computedStatus
+        }
+      })
       
-      console.log('✅ Fetched transcriptions:', transcriptionsWithStatus.length, 'records')
+      setProcessingCount(processing)
+      
+      if (!silent) {
+        console.log('✅ Fetched transcriptions:', transcriptionsWithStatus.length, 'records,', processing, 'processing')
+      }
       setTranscriptions(transcriptionsWithStatus)
     } catch (error) {
-      console.error('❌ Error fetching transcriptions via API:', error)
-      setTranscriptions([])
+      console.error('❌ Error fetching transcriptions:', error)
+      if (!silent) {
+        setTranscriptions([])
+      }
     } finally {
       setLoading(false)
+      setRefreshing(false)
     }
   }
 
@@ -279,7 +368,13 @@ ${transcription.transcription_text}`
             Manage and review all your transcriptions
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-center">
+          {processingCount > 0 && (
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-yellow-50 text-yellow-700 rounded-md text-sm">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              <span>{processingCount} processing...</span>
+            </div>
+          )}
           <Button
             variant="outline"
             onClick={() => setShowFilters(!showFilters)}
@@ -287,7 +382,8 @@ ${transcription.transcription_text}`
             <Filter className="h-4 w-4 mr-2" />
             Filters
           </Button>
-          <Button onClick={fetchTranscriptions}>
+          <Button onClick={() => fetchTranscriptions()} disabled={refreshing}>
+            <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
         </div>
