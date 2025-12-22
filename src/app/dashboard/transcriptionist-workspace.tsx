@@ -711,6 +711,38 @@ export default function TranscriptionistWorkspace() {
     
     console.log('📤 Starting upload:', selectedFile.name)
     
+    // Generate a temporary ID for immediate display
+    const tempId = `temp-${Date.now()}`
+    
+    // IMMEDIATELY add a placeholder transcription to the list with "processing" status
+    const placeholderTranscription: Transcription = {
+      id: tempId,
+      file_name: selectedFile.name,
+      doctor_name: uploadFormData.doctorName,
+      patient_name: uploadFormData.patientName,
+      document_type: uploadFormData.documentType,
+      transcription_text: '',
+      audio_url: '',
+      created_at: new Date().toISOString(),
+      status: 'in_progress',
+      file_size: selectedFile.size
+    }
+    
+    // Add to list immediately and select it
+    setTranscriptions(prev => [placeholderTranscription, ...prev])
+    setSelectedTranscription(placeholderTranscription)
+    setProcessingIds(prev => new Set([...prev, tempId]))
+    
+    console.log('📤 Added placeholder transcription:', tempId)
+    
+    // Scroll to the new item
+    setTimeout(() => {
+      const element = document.querySelector(`[data-transcription-id="${tempId}"]`)
+      if (element) {
+        element.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+      }
+    }, 100)
+    
     try {
       // Submit transcription - SSE hook will handle real-time updates
       const response = await submitTranscription({
@@ -724,49 +756,45 @@ export default function TranscriptionistWorkspace() {
         console.log(`✅ Upload successful, ID: ${response.transcriptionId}`)
         setUploadProgress(50)
         
-        // Add to processing IDs - SSE hook will automatically subscribe
+        // Replace the temp ID with the real ID in the list
+        setTranscriptions(prev => prev.map(t => 
+          t.id === tempId 
+            ? { ...t, id: response.transcriptionId! }
+            : t
+        ))
+        
+        // Update selected transcription with real ID
+        setSelectedTranscription(prev => 
+          prev && prev.id === tempId 
+            ? { ...prev, id: response.transcriptionId! }
+            : prev
+        )
+        
+        // Update processing IDs - remove temp, add real
         setProcessingIds(prev => {
           const newSet = new Set(prev)
+          newSet.delete(tempId)
           newSet.add(response.transcriptionId!)
           return newSet
         })
         
-        // Fetch to show the new transcription in the list
-        console.log('🔄 Fetching transcriptions to show new upload...')
-        await fetchTranscriptions(false, true)
-        
-        // Schedule additional refetches to catch fast completions
-        // n8n typically completes in 1-5 seconds for short audio
+        // Schedule refetches to get the real data and catch completions
         setTimeout(() => fetchTranscriptions(false, true), 2000)
         setTimeout(() => fetchTranscriptions(false, true), 5000)
         setTimeout(() => fetchTranscriptions(false, true), 10000)
         
         setUploadProgress(100)
         
-        // Find and select the newly uploaded item
+        // Scroll to and highlight the item with real ID
         setTimeout(() => {
-          setTranscriptions(prev => {
-            const newItem = prev.find(t => t.id === response.transcriptionId)
-            if (newItem) {
-              console.log('✅ Found new upload in list:', newItem.file_name)
-              setSelectedTranscription(newItem)
-              
-              // Scroll to it and highlight
-              setTimeout(() => {
-                const element = document.querySelector(`[data-transcription-id="${response.transcriptionId}"]`)
-                if (element) {
-                  element.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
-                  element.classList.add('ring-2', 'ring-blue-500', 'transition-all')
-                  setTimeout(() => {
-                    element.classList.remove('ring-2', 'ring-blue-500')
-                  }, 4000)
-                }
-              }, 100)
-            } else {
-              console.warn('⚠️ New upload not found in list, will appear on next refresh')
-            }
-            return prev
-          })
+          const element = document.querySelector(`[data-transcription-id="${response.transcriptionId}"]`)
+          if (element) {
+            element.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+            element.classList.add('ring-2', 'ring-blue-500', 'transition-all')
+            setTimeout(() => {
+              element.classList.remove('ring-2', 'ring-blue-500')
+            }, 4000)
+          }
         }, 300)
         
         // Clear form
@@ -778,10 +806,31 @@ export default function TranscriptionistWorkspace() {
         console.log('✅ Upload submitted - SSE will provide real-time updates')
       } else {
         console.error('❌ Upload response not successful:', response)
+        // Remove the placeholder on failure
+        setTranscriptions(prev => prev.filter(t => t.id !== tempId))
+        setProcessingIds(prev => {
+          const newSet = new Set(prev)
+          newSet.delete(tempId)
+          return newSet
+        })
+        if (selectedTranscription?.id === tempId) {
+          setSelectedTranscription(null)
+        }
         throw new Error(response.error || 'Failed to submit transcription')
       }
     } catch (error) {
       console.error('❌ Upload error:', error)
+      
+      // Remove the placeholder on error
+      setTranscriptions(prev => prev.filter(t => t.id !== tempId))
+      setProcessingIds(prev => {
+        const newSet = new Set(prev)
+        newSet.delete(tempId)
+        return newSet
+      })
+      if (selectedTranscription?.id === tempId) {
+        setSelectedTranscription(null)
+      }
       
       let errorMessage = 'Failed to upload file. Please try again.'
       if (error instanceof Error) {
