@@ -39,8 +39,6 @@ import {
 } from '@/lib/transcription-service'
 import { uploadAudioToStorage, getSignedAudioUrl } from '@/lib/storage-service'
 import { BulkUploadModal } from '@/components/bulk-upload-modal'
-import { useTranscriptionUpdates } from '@/hooks/useTranscriptionUpdates'
-import { supabase } from '@/lib/supabase'
 
 interface Transcription {
   id: string
@@ -98,140 +96,6 @@ export default function TranscriptionistWorkspace() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const textAreaRef = useRef<HTMLTextAreaElement>(null)
 
-  // Handle real-time updates via SSE for processing transcriptions
-  const handleStatusUpdate = useCallback((id: string, status: TranscriptionStatus) => {
-    console.log('📡 Real-time status update:', { id, status: status.status })
-    
-    // Update the transcription in the list
-    setTranscriptions(prev => {
-      const updated = prev.map(t => {
-        if (t.id === id) {
-          const newStatus = status.transcription_text && status.transcription_text.trim() !== '' 
-            ? 'completed' 
-            : status.status
-          return {
-            ...t,
-            status: newStatus,
-            transcription_text: status.transcription_text || t.transcription_text,
-            audio_url: status.audio_url || t.audio_url,
-          }
-        }
-        return t
-      })
-      return updated
-    })
-    
-    // Also update selected transcription if it matches
-    setSelectedTranscription(prev => {
-      if (prev && prev.id === id) {
-        const newStatus = status.transcription_text && status.transcription_text.trim() !== '' 
-          ? 'completed' 
-          : status.status
-        const updated = {
-          ...prev,
-          status: newStatus,
-          transcription_text: status.transcription_text || prev.transcription_text,
-          audio_url: status.audio_url || prev.audio_url,
-        }
-        // Update editing text if user hasn't made changes
-        if (!hasUnsavedChanges && status.transcription_text) {
-          setEditingText(status.transcription_text)
-          setLastSavedText(status.transcription_text)
-        }
-        return updated
-      }
-      return prev
-    })
-  }, [hasUnsavedChanges])
-
-  const handleTranscriptionComplete = useCallback((id: string, status: TranscriptionStatus) => {
-    console.log('✅ Transcription completed:', id, 'with text:', status.transcription_text ? 'yes' : 'no')
-    
-    // Remove from processing IDs
-    setProcessingIds(prev => {
-      const newSet = new Set(prev)
-      newSet.delete(id)
-      return newSet
-    })
-    
-    // Update the transcription in the list with final data
-    setTranscriptions(prev => prev.map(t => {
-      if (t.id === id) {
-        return {
-          ...t,
-          status: 'completed' as const,
-          transcription_text: status.transcription_text || t.transcription_text,
-          audio_url: status.audio_url || t.audio_url,
-        }
-      }
-      return t
-    }))
-    
-    // Update selected transcription and editor if this is the selected one
-    setSelectedTranscription(prev => {
-      if (prev && prev.id === id) {
-        const finalText = status.transcription_text || prev.transcription_text
-        // Force update editor text with the completed transcription
-        setEditingText(finalText)
-        setLastSavedText(finalText)
-        setHasUnsavedChanges(false)
-        
-        return {
-          ...prev,
-          status: 'completed' as const,
-          transcription_text: finalText,
-          audio_url: status.audio_url || prev.audio_url,
-        }
-      }
-      return prev
-    })
-    
-    // Show browser notification
-    if ('Notification' in window && Notification.permission === 'granted') {
-      new Notification('Transcription Complete! ✅', {
-        body: 'Your transcription is ready to review',
-        icon: '/favicon.ico',
-        tag: id
-      })
-    }
-    
-    // Highlight the completed item in the list
-    setTimeout(() => {
-      const element = document.querySelector(`[data-transcription-id="${id}"]`)
-      if (element) {
-        element.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
-        element.classList.add('ring-2', 'ring-green-500', 'transition-all')
-        setTimeout(() => {
-          element.classList.remove('ring-2', 'ring-green-500')
-        }, 3000)
-      }
-    }, 100)
-  }, [])
-
-  const handleTranscriptionError = useCallback((id: string, error: Error) => {
-    console.error('❌ Transcription error:', id, error)
-    
-    // Remove from processing IDs
-    setProcessingIds(prev => {
-      const newSet = new Set(prev)
-      newSet.delete(id)
-      return newSet
-    })
-    
-    // Update status to failed
-    setTranscriptions(prev => prev.map(t => 
-      t.id === id ? { ...t, status: 'failed' } : t
-    ))
-  }, [])
-
-  // Use the SSE hook for real-time updates
-  useTranscriptionUpdates({
-    processingIds,
-    onStatusUpdate: handleStatusUpdate,
-    onComplete: handleTranscriptionComplete,
-    onError: handleTranscriptionError
-  })
-
   // Initial fetch when user loads
   useEffect(() => {
     if (user?.id) {
@@ -240,109 +104,18 @@ export default function TranscriptionistWorkspace() {
     }
   }, [user?.id])
 
-  // SUPABASE REALTIME: Subscribe to database changes for instant updates
+  // SIMPLE ROBUST POLLING: Check for updates every 2 seconds when there are processing items
+  // This is the ONLY update mechanism - no SSE, no Realtime, just reliable polling
   useEffect(() => {
-    if (!user?.id || !supabase) return
-
-    console.log('📡 Setting up Supabase Realtime subscription for user:', user.id)
-
-    // Subscribe to all changes on transcriptions for this user
-    const channel = supabase
-      .channel('transcription-updates')
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'transcriptions',
-          filter: `user_id=eq.${user.id}`
-        },
-        (payload: { new: Record<string, any> }) => {
-          console.log('📡 Realtime UPDATE received:', payload.new.id, payload.new.status)
-          
-          const data = payload.new as any
-          const hasText = data.transcription_text && data.transcription_text.trim().length > 0
-          const effectiveStatus = hasText ? 'completed' : data.status
-          
-          // Update the transcription in the list
-          setTranscriptions(prev => prev.map(t => {
-            if (t.id === data.id) {
-              return {
-                ...t,
-                status: effectiveStatus,
-                transcription_text: data.transcription_text || t.transcription_text,
-                audio_url: data.audio_url || t.audio_url,
-              }
-            }
-            return t
-          }))
-          
-          // Update selected transcription if it matches
-          setSelectedTranscription(prev => {
-            if (prev && prev.id === data.id) {
-              const finalText = data.transcription_text || prev.transcription_text
-              
-              // Update editor if user hasn't made changes and we have new text
-              if (data.transcription_text && data.transcription_text !== prev.transcription_text) {
-                setEditingText(finalText)
-                setLastSavedText(finalText)
-                setHasUnsavedChanges(false)
-              }
-              
-              return {
-                ...prev,
-                status: effectiveStatus,
-                transcription_text: finalText,
-                audio_url: data.audio_url || prev.audio_url,
-              }
-            }
-            return prev
-          })
-          
-          // Remove from processing IDs if completed
-          if (effectiveStatus === 'completed' || data.status === 'failed') {
-            setProcessingIds(prev => {
-              const newSet = new Set(prev)
-              newSet.delete(data.id)
-              return newSet
-            })
-            
-            // Show notification
-            if (effectiveStatus === 'completed' && 'Notification' in window && Notification.permission === 'granted') {
-              new Notification('Transcription Complete! ✅', {
-                body: 'Your transcription is ready to review',
-                icon: '/favicon.ico',
-                tag: data.id
-              })
-            }
-          }
-        }
-      )
-      .subscribe((status: string) => {
-        console.log('📡 Realtime subscription status:', status)
-      })
-
-    return () => {
-      console.log('📡 Cleaning up Realtime subscription')
-      supabase.removeChannel(channel)
-    }
-  }, [user?.id])
-
-  // FALLBACK: Polling mechanism for processing transcriptions
-  // This ensures updates are received even if SSE/Realtime fails
-  useEffect(() => {
-    // Only poll when there are processing items
-    if (processingIds.size === 0 || !user?.id) {
-      return
-    }
-
-    console.log('🔄 Starting fallback polling for', processingIds.size, 'processing items')
+    if (!user?.id) return
     
-    // Poll immediately on first run, then every 3 seconds
-    let isFirstPoll = true
+    // Always poll when there are processing items OR when we just uploaded something
+    if (processingIds.size === 0) return
+
+    console.log('🔄 Starting auto-refresh polling for', processingIds.size, 'processing items:', Array.from(processingIds))
     
-    const pollInterval = setInterval(async () => {
-      // Check each processing ID for updates
+    // Poll function that checks all processing IDs
+    const checkForUpdates = async () => {
       const idsToCheck = Array.from(processingIds)
       
       for (const id of idsToCheck) {
@@ -358,68 +131,79 @@ export default function TranscriptionistWorkspace() {
           const isComplete = data.status === 'completed' || hasText
           
           if (isComplete || data.status === 'failed') {
-            console.log('🔄 Fallback poll found completed transcription:', id)
+            console.log('✅ Poll found completed transcription:', id, 'hasText:', hasText)
             
-            // Update the transcription
-            const status: TranscriptionStatus = {
-              id: data.id,
-              status: hasText ? 'completed' : data.status,
-              transcription_text: data.transcription_text,
-              audio_url: data.audio_url,
-              error: data.error
-            }
+            const effectiveStatus = hasText ? 'completed' : data.status
             
-            // Trigger the same handlers as SSE would
-            handleStatusUpdate(id, status)
+            // Update transcription in list
+            setTranscriptions(prev => prev.map(t => {
+              if (t.id === id) {
+                return {
+                  ...t,
+                  status: effectiveStatus as 'completed' | 'failed',
+                  transcription_text: data.transcription_text || t.transcription_text,
+                  audio_url: data.audio_url || t.audio_url,
+                }
+              }
+              return t
+            }))
             
-            if (status.status === 'completed') {
-              handleTranscriptionComplete(id, status)
-            } else if (status.status === 'failed') {
-              handleTranscriptionError(id, new Error(data.error || 'Transcription failed'))
+            // Update selected transcription if it matches
+            setSelectedTranscription(prev => {
+              if (prev && prev.id === id) {
+                const finalText = data.transcription_text || prev.transcription_text
+                
+                // Update editor with new text
+                if (data.transcription_text && data.transcription_text !== prev.transcription_text) {
+                  setEditingText(finalText)
+                  setLastSavedText(finalText)
+                  setHasUnsavedChanges(false)
+                }
+                
+                return {
+                  ...prev,
+                  status: effectiveStatus as 'completed' | 'failed',
+                  transcription_text: finalText,
+                  audio_url: data.audio_url || prev.audio_url,
+                }
+              }
+              return prev
+            })
+            
+            // Remove from processing IDs
+            setProcessingIds(prev => {
+              const newSet = new Set(prev)
+              newSet.delete(id)
+              console.log('🔄 Removed', id, 'from processing. Remaining:', newSet.size)
+              return newSet
+            })
+            
+            // Show browser notification
+            if (effectiveStatus === 'completed' && 'Notification' in window && Notification.permission === 'granted') {
+              new Notification('Transcription Complete! ✅', {
+                body: 'Your transcription is ready to review',
+                icon: '/favicon.ico',
+                tag: id
+              })
             }
           }
         } catch (error) {
-          console.error('Fallback poll error for', id, error)
+          console.error('Poll error for', id, error)
         }
       }
-    }, 3000) // Poll every 3 seconds (reduced from 5s for faster updates)
-
-    // Also poll immediately
-    if (isFirstPoll) {
-      isFirstPoll = false
-      // Trigger immediate poll
-      setTimeout(async () => {
-        const idsToCheck = Array.from(processingIds)
-        for (const id of idsToCheck) {
-          try {
-            const response = await fetch(`/api/transcribe-optimized?id=${id}`)
-            if (!response.ok) continue
-            const result = await response.json()
-            if (!result.success || !result.transcription) continue
-            const data = result.transcription
-            const hasText = data.transcription_text && data.transcription_text.trim().length > 0
-            if (hasText || data.status === 'completed' || data.status === 'failed') {
-              console.log('🔄 Immediate poll found update for:', id)
-              const status: TranscriptionStatus = {
-                id: data.id,
-                status: hasText ? 'completed' : data.status,
-                transcription_text: data.transcription_text,
-                audio_url: data.audio_url,
-                error: data.error
-              }
-              handleStatusUpdate(id, status)
-              if (status.status === 'completed') handleTranscriptionComplete(id, status)
-            }
-          } catch (e) { /* ignore */ }
-        }
-      }, 500)
     }
+    
+    // Poll immediately on start
+    checkForUpdates()
+    
+    // Then poll every 2 seconds
+    const pollInterval = setInterval(checkForUpdates, 2000)
 
     return () => {
-      console.log('🔄 Stopping fallback polling')
+      console.log('🔄 Stopping auto-refresh polling')
       clearInterval(pollInterval)
     }
-  }, [processingIds, user?.id, handleStatusUpdate, handleTranscriptionComplete, handleTranscriptionError])
+  }, [processingIds, user?.id])
 
   useEffect(() => {
     if (selectedTranscription) {
